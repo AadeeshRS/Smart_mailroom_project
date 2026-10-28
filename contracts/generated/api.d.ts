@@ -12,7 +12,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in to a fixed provisioned demonstration account
-         * @description Passcode is demonstration-only. Role is determined by the provisioned account; no client role input. Session lasts 30 minutes. No SSO or domain verification.
+         * @description Passcode is demonstration-only. Role is determined by the provisioned account; no client role input. Session lasts 30 minutes. No SSO or domain verification. Development builds/environments only; production deployments must omit this operation (404 DEMO_DISABLED), never accept the demo passcode.
          */
         post: operations["login"];
         delete?: never;
@@ -80,7 +80,7 @@ export interface paths {
         put?: never;
         /**
          * Register expected order and re-evaluate stored parcels
-         * @description Same student active platform/order duplicate: 409 DUPLICATE_ORDER. Cross-student overlapping claims retained as disputed, never first-claim allocation. New claims or tracking additions re-evaluate all unclosed relevant parcels, invalidate credentials and hold assigned parcels on new ambiguity/conflict. Late orders use identical matching safeguards.
+         * @description Same student active platform/order duplicate: 409 DUPLICATE_ORDER. Cross-student overlapping claims retained as disputed, never first-claim allocation. New claims or tracking additions re-evaluate all unclosed relevant parcels, invalidate credentials and hold assigned parcels on new ambiguity/conflict. Late orders use identical matching safeguards. Required idempotencyKey. Scope is authenticated principal + operationId + key; canonical fingerprint includes path and semantic JSON body except the key, with sorted object keys. For 24 hours, same request replays the original response without repeating side effects, even if the current resource revision has changed; different body/path gives 409 IDEMPOTENCY_CONFLICT. Only successful writes retain results; validation/authorization/state errors do not reserve a key. Expired result entries may be removed and a later request treated as fresh, subject to domain constraints; clients must use a new key after 24 hours. Backend must commit resource changes and idempotency result together. A retry that changes data requires an explicit new operation and key, not silent mutation of an uncertain request.
          */
         post: operations["createOrder"];
         delete?: never;
@@ -164,7 +164,7 @@ export interface paths {
         put?: never;
         /**
          * Save physical intake and evaluate trustworthy matching
-         * @description Camera returns untrusted text only; fields must be classified and labelReviewed true. physicalReference uniquely identifies a physical parcel (not an order or shared tracking); duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed case-normalized value, exactly one unconflicted candidate, email or student-number corroboration and no conflicting supplied recipient or comparable identifier. Name alone never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot auto-match. Separate physical references support split shipments.
+         * @description Camera returns untrusted text only; fields must be classified and labelReviewed true. physicalReference uniquely identifies a physical parcel (not an order or shared tracking); duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed case-normalized value, exactly one unconflicted candidate, email or student-number corroboration and no conflicting supplied recipient or comparable identifier. Name alone never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot auto-match. Separate physical references support split shipments. Required idempotencyKey. Scope is authenticated principal + operationId + key; canonical fingerprint includes path and semantic JSON body except the key, with sorted object keys. For 24 hours, same request replays the original response without repeating side effects, even if the current resource revision has changed; different body/path gives 409 IDEMPOTENCY_CONFLICT. Only successful writes retain results; validation/authorization/state errors do not reserve a key. Expired result entries may be removed and a later request treated as fresh, subject to domain constraints; clients must use a new key after 24 hours. Backend must commit resource changes and idempotency result together. A retry that changes data requires an explicit new operation and key, not silent mutation of an uncertain request. A normalized carrier/tracking value found on another physical reference, including a closed historical parcel, is TRACKING_COLLISION. Save the new physical record unassigned as AWAITING_MATCH/REVIEW; hold affected uncollected assignments as DISPUTE and invalidate credentials. Never alter closed history. Staff must explicitly document a resolution for each affected uncollected parcel. A reviewed collision resolution remains valid only for the recorded collision membership/evidence. Sharing a merchant order ID alone is allowed for split shipments.
          */
         post: operations["intakeParcel"];
         delete?: never;
@@ -202,7 +202,7 @@ export interface paths {
         };
         /**
          * Inspect candidate evidence; staff only
-         * @description Comparable candidates first, then remaining active orders for evidence-led manual reconciliation. Candidate profiles never exposed to student endpoints.
+         * @description Staff-only searchable candidates. Active comparable requests first, then createdAt descending and opaque ID descending. Default 20, maximum 50. Snapshot pagination rules below apply; all evidence decisions recheck current parcel revision. Returning a candidate never authorizes allocation.
          */
         get: operations["getReview"];
         put?: never;
@@ -224,7 +224,7 @@ export interface paths {
         put?: never;
         /**
          * Reconcile with evidence checklist and recorded reason
-         * @description All checklist booleans true; reason at least 12 characters. expectedRevision must match. May resolve disputes or transfer an uncollected parcel with explicit audit and notifications; invalidates outstanding credentials. Cannot change CLOSED parcel ownership. Review policy is a proposed decision for independent approval; no screenshot/document upload. A resolved decision remains effective for the reviewed claims. New relevant claims or identifiers invalidate the reviewed evidence baseline and trigger a new hold; unrelated registrations do not.
+         * @description All checklist booleans true; reason at least 12 characters. expectedRevision must match. May resolve disputes or transfer an uncollected parcel with explicit audit and notifications; invalidates outstanding credentials. Cannot change CLOSED parcel ownership. Review policy is a proposed decision for independent approval; no screenshot/document upload. A resolved decision remains effective for the reviewed claims. New relevant claims or identifiers invalidate the reviewed evidence baseline and trigger a new hold; unrelated registrations do not. Required idempotencyKey. Scope is authenticated principal + operationId + key; canonical fingerprint includes path and semantic JSON body except the key, with sorted object keys. For 24 hours, same request replays the original response without repeating side effects, even if the current resource revision has changed; different body/path gives 409 IDEMPOTENCY_CONFLICT. Only successful writes retain results; validation/authorization/state errors do not reserve a key. Expired result entries may be removed and a later request treated as fresh, subject to domain constraints; clients must use a new key after 24 hours. Backend must commit resource changes and idempotency result together. A retry that changes data requires an explicit new operation and key, not silent mutation of an uncertain request.
          */
         post: operations["reconcileParcel"];
         delete?: never;
@@ -264,7 +264,7 @@ export interface paths {
         put?: never;
         /**
          * Issue or explicitly replace parcel collection credential
-         * @description Eligible owner only; ten-minute validity, one current credential. Six-digit string OTP and PII-free versioned QR. Same key/same body in same session replays original issuance while active; changed body 409 IDEMPOTENCY_CONFLICT. Different key with active credential and replace false: 409 CREDENTIAL_ACTIVE. replace true invalidates old OTP/QR and verifications. Secrets only in issuance response, never list/detail/logs. Mock keeps secrets in volatile memory; after restart old retry yields ISSUANCE_RETRY_UNAVAILABLE and student must use a fresh key/replacement. Expired/invalidated key cannot silently issue another credential. Backend replay/secret-retention policy needs review.
+         * @description Student owner and eligible parcel only. 6-digit OTP and PII-free QR, one current credential, 10 minutes. Scope principal + issueCredential + key; metadata retained 24 hours. Same key/body replays only while the original current unexpired credential secrets remain in volatile issuance memory in that same authenticated session. Replacement, expiry, session change or process restart makes replay unavailable: 409 ISSUANCE_RETRY_UNAVAILABLE. After 24 hours the key may be fresh, but active-credential checks still apply. To recover explicitly choose replacement with replace=true and a NEW key; this invalidates prior OTP/QR/verification. No plaintext credential persistence is required or allowed in the mock. Future backend may retain an encrypted replay envelope for at most the issuance session/credential lifetime; hashes alone must never be presented as recoverable secrets. Responses and errors Cache-Control: no-store; secrets never appear in logs or list/detail endpoints.
          */
         post: operations["issueCredential"];
         delete?: never;
@@ -304,7 +304,7 @@ export interface paths {
         put?: never;
         /**
          * Explicitly confirm physical handover or replay original receipt
-         * @description Requires true physicalHandoverConfirmed, valid bound verification and idempotencyKey. Same staff account/key/body replays original retained receipt even after restart or verification expiry. Reusing key with changed body: 409 IDEMPOTENCY_CONFLICT. Different successful key for already CLOSED: ALREADY_COLLECTED; changed revision: REVISION_CHANGED; hold: COLLECTION_HOLD; stale competing verification: CONCURRENT_CONFLICT; expired verification: VERIFICATION_EXPIRED. One receipt per parcel. Backend must atomically recheck authorization, hold, revision, current credential, verification, update CLOSED, consume credential and insert receipt/idempotency record. Mock simulates serialized state changes only, not database safety.
+         * @description Staff only. Fresh authorization requires true physicalHandoverConfirmed and verification bound to current credential, parcel revision and STAFF SESSION; verification expires at min(2 minutes, credential expiry). Idempotency scope is staff ACCOUNT + confirmHandover + key; fingerprint includes exact parcelId, verificationId and physicalHandoverConfirmed. Persist the original request/key before attempting confirmation and keep it on uncertain outcome; never silently mint a fresh key. Replay lookup precedes verification/credential expiry and current lifecycle checks. A committed same-body result replays the original receipt after verification expiry, logout/login, process restart or CLOSED status. Different body/path gives 409 IDEMPOTENCY_CONFLICT. Handover mappings are retained for the lifetime of their retained receipt (stronger than ordinary 24-hour writes). Without a committed result, expired/missing verification gives 410 VERIFICATION_EXPIRED; it cannot create a handover. Holds/revision changes/credential changes/already-collected fresh attempts remain rejected. Recovery is account-scoped; no session token, OTP or QR secret is persisted by the client. Backend must atomically recheck, consume credential, close parcel, create one receipt and store idempotency result. Mock serialization is not database atomicity evidence.
          */
         post: operations["confirmHandover"];
         delete?: never;
@@ -404,9 +404,49 @@ export interface paths {
         put?: never;
         /**
          * Explicitly reset synthetic demo data and revoke all sessions
-         * @description Explicitly reset synthetic demo data and revoke all sessions
+         * @description Explicitly reset synthetic demo data and revoke all sessions Development builds/environments only; production must omit it (404 DEMO_DISABLED). Mock kernel can disable demo operations. Reset erases all synthetic records and idempotency results and revokes sessions; clients clear their confirmation recovery records.
          */
         post: operations["resetDemo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/staff/parcels/{parcelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read staff-only StaffParcel
+         * @description Authenticated staff only. Includes internal evidence/audit metadata; student calls return FORBIDDEN.
+         */
+        get: operations["getStaffParcel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/staff/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read staff-only StaffReceipt
+         * @description Authenticated staff only. Includes internal evidence/audit metadata; student calls return FORBIDDEN.
+         */
+        get: operations["getStaffReceipt"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -417,19 +457,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         UserId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         OrderId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         ParcelId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         NotificationId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         CredentialId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         VerificationId: string;
+        /** @description Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically secure random generator, for example a prefix plus base64url encoding of 16 random bytes. Never derive IDs from frontend counters, names or database row counts. Counter IDs in the deterministic local demo are not a backend allocation scheme. */
         ReceiptId: string;
         /**
          * Format: date-time
          * @description RFC3339 UTC timestamp; responses end in Z.
          */
         Timestamp: string;
-        /** @enum {string} */
+        /**
+         * @description Approved catalog. Canonical uppercase namespace keys only. AMAZON and MYNTRA order IDs: trim, case-sensitive, preserve punctuation. FLIPKART: trim and uppercase. OTHER: trim, case-sensitive and review-only. These are prototype comparison policies, not merchant integrations.
+         * @enum {string}
+         */
         Platform: "AMAZON" | "FLIPKART" | "MYNTRA" | "OTHER";
         /** @enum {string} */
         OrderStatus: "PENDING" | "MATCHED" | "CANCELLED";
@@ -438,11 +488,11 @@ export interface components {
         /** @enum {string} */
         Hold: "NONE" | "REVIEW" | "DISPUTE";
         /** @enum {string} */
-        MatchOutcome: "MATCHED" | "NO_MATCH" | "AMBIGUOUS" | "CONFLICT" | "DUPLICATE" | "INSUFFICIENT_EVIDENCE";
+        MatchOutcome: "MATCHED" | "NO_MATCH" | "AMBIGUOUS" | "CONFLICT" | "DUPLICATE" | "INSUFFICIENT_EVIDENCE" | "TRACKING_COLLISION";
         /** @enum {string} */
         CredentialState: "NONE" | "ACTIVE" | "EXPIRED" | "INVALIDATED" | "CONSUMED";
         /** @enum {string} */
-        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "SESSION_EXPIRED" | "FORBIDDEN" | "NOT_FOUND" | "DUPLICATE_ORDER" | "DUPLICATE_INTAKE" | "CANCELLATION_INELIGIBLE" | "COLLECTION_HOLD" | "NOT_ELIGIBLE" | "CREDENTIAL_ACTIVE" | "ISSUANCE_RETRY_UNAVAILABLE" | "INVALID_CREDENTIAL" | "CREDENTIAL_EXPIRED" | "CREDENTIAL_INVALIDATED" | "ATTEMPTS_EXCEEDED" | "VERIFICATION_EXPIRED" | "REVISION_CHANGED" | "ALREADY_COLLECTED" | "CONCURRENT_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "NETWORK" | "PERSISTENCE";
+        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "SESSION_EXPIRED" | "FORBIDDEN" | "NOT_FOUND" | "DUPLICATE_ORDER" | "DUPLICATE_INTAKE" | "CANCELLATION_INELIGIBLE" | "COLLECTION_HOLD" | "NOT_ELIGIBLE" | "CREDENTIAL_ACTIVE" | "ISSUANCE_RETRY_UNAVAILABLE" | "INVALID_CREDENTIAL" | "CREDENTIAL_EXPIRED" | "CREDENTIAL_INVALIDATED" | "ATTEMPTS_EXCEEDED" | "VERIFICATION_EXPIRED" | "REVISION_CHANGED" | "ALREADY_COLLECTED" | "CONCURRENT_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "NETWORK" | "PERSISTENCE" | "UNKNOWN_NAMESPACE" | "DEMO_DISABLED" | "CURSOR_INVALID";
         ErrorEnvelope: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -472,23 +522,21 @@ export interface components {
         Ok: {
             ok: boolean;
         };
-        /** @description ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier. Namespace and values normalize by trim + uppercase in this demo. OTHER platform always requires staff review. A match only in the generic OTHER carrier namespace also requires review. Carrier alias/normalization policy needs backend review. */
-        Identifier: {
-            /** @enum {string} */
-            kind: "ORDER_ID" | "TRACKING";
-            namespace: string;
-            value: string;
-        };
+        Identifier: components["schemas"]["OrderIdentifier"] | components["schemas"]["TrackingReference"];
         TrackingReference: {
-            /** @enum {string} */
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
             kind: "TRACKING";
-            namespace: string;
+            namespace: components["schemas"]["Carrier"];
             value: string;
         };
         CreateOrder: {
             platform: components["schemas"]["Platform"];
             merchantOrderId: string;
             tracking: components["schemas"]["TrackingReference"][];
+            idempotencyKey: string;
         };
         AddTracking: {
             reference: components["schemas"]["TrackingReference"];
@@ -515,6 +563,7 @@ export interface components {
             /** @enum {string} */
             source: "MANUAL" | "CAMERA";
             labelReviewed: boolean;
+            idempotencyKey: string;
         };
         AuditEvent: {
             at: components["schemas"]["Timestamp"];
@@ -522,29 +571,31 @@ export interface components {
             actorId: components["schemas"]["UserId"];
             reason: string;
         };
+        /** @description Explicit public projection used by students and common parcel reads. matchExplanation and holdReason are allowlisted public messages, never label evidence, staff actor IDs or reconciliation free text. Staff details use getStaffParcel/getReview. */
         Parcel: {
             id: components["schemas"]["ParcelId"];
-            identifiers: components["schemas"]["Identifier"][];
-            recipientEmail: string;
-            recipientStudentNumber: string;
-            recipientName: string;
             description: string;
             storageLocation: string;
             physicalReference: string;
-            /** @enum {string} */
-            source: "MANUAL" | "CAMERA";
             status: components["schemas"]["ParcelStatus"];
             receivedAt: components["schemas"]["Timestamp"];
             orderId?: components["schemas"]["OrderId"];
             studentId?: components["schemas"]["UserId"];
             revision: number;
             matchOutcome: components["schemas"]["MatchOutcome"];
-            matchExplanation: string;
+            /**
+             * @description Allowlisted public status explanation only.
+             * @enum {string}
+             */
+            matchExplanation: "Collected; retained receipt available." | "Mailroom review is required before collection." | "Matched parcel is ready for collection." | "Awaiting mailroom matching review.";
             hold: components["schemas"]["Hold"];
-            holdReason: string;
+            /**
+             * @description Generic public collection-hold explanation only.
+             * @enum {string}
+             */
+            holdReason: "" | "Collection is paused pending mailroom review.";
             collectionEligible: boolean;
             credentialState: components["schemas"]["CredentialState"];
-            audit: components["schemas"]["AuditEvent"][];
             receiptId?: components["schemas"]["ReceiptId"];
         };
         Candidate: {
@@ -555,8 +606,9 @@ export interface components {
             conflicts: string[];
         };
         ParcelReview: {
-            parcel: components["schemas"]["Parcel"];
+            parcel: components["schemas"]["StaffParcel"];
             candidates: components["schemas"]["Candidate"][];
+            nextCursor?: string;
         };
         ReconcileInput: {
             orderId: components["schemas"]["OrderId"];
@@ -565,6 +617,7 @@ export interface components {
             recipientVerified: boolean;
             conflictsResolved: boolean;
             reason: string;
+            idempotencyKey: string;
         };
         HoldInput: {
             hold: components["schemas"]["Hold"];
@@ -602,13 +655,7 @@ export interface components {
             issuedAt: components["schemas"]["Timestamp"];
             expiresAt: components["schemas"]["Timestamp"];
         };
-        /** @description method OTP requires otp and no qr; method QR requires qr and no otp. Extra secret fields are not accepted by a future HTTP adapter. Mock validates the selected method. */
-        VerifyInput: {
-            /** @enum {string} */
-            method: "OTP" | "QR";
-            otp?: string;
-            qr?: components["schemas"]["QrPayload"];
-        };
+        VerifyInput: components["schemas"]["OtpVerification"] | components["schemas"]["QrVerification"];
         Verification: {
             id: components["schemas"]["VerificationId"];
             parcelId: components["schemas"]["ParcelId"];
@@ -616,25 +663,24 @@ export interface components {
             parcelRevision: number;
             expiresAt: components["schemas"]["Timestamp"];
             student: components["schemas"]["Profile"];
-            parcel: components["schemas"]["Parcel"];
+            parcel: components["schemas"]["StaffParcel"];
         };
         ConfirmInput: {
             verificationId: components["schemas"]["VerificationId"];
             physicalHandoverConfirmed: boolean;
             idempotencyKey: string;
         };
+        /** @description Public retained receipt projection. Staff actor and verification reference are excluded. */
         Receipt: {
             id: components["schemas"]["ReceiptId"];
             parcelId: components["schemas"]["ParcelId"];
             orderId: components["schemas"]["OrderId"];
             studentId: components["schemas"]["UserId"];
-            staffId: components["schemas"]["UserId"];
             confirmedAt: components["schemas"]["Timestamp"];
             storageLocation: string;
-            verificationId: components["schemas"]["VerificationId"];
         };
         Confirmation: {
-            receipt: components["schemas"]["Receipt"];
+            receipt: components["schemas"]["StaffReceipt"];
             replayed: boolean;
         };
         Guide: {
@@ -659,11 +705,79 @@ export interface components {
             items: components["schemas"]["Receipt"][];
             nextCursor?: string;
         };
+        /**
+         * @description Approved catalog. Canonical uppercase namespace keys only. DELHIVERY and EKART: trim and uppercase identifier; BLUEDART: remove ASCII spaces, digits only, preserve leading zeros. OTHER: trim, case-sensitive, review-only. No other carrier namespace is accepted.
+         * @enum {string}
+         */
+        Carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "OTHER";
+        OrderIdentifier: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "ORDER_ID";
+            namespace: components["schemas"]["Platform"];
+            value: string;
+        };
+        /** @description Staff-only physical label evidence, internal match/hold reasons and audit actors. Never returned by common or student parcel reads. */
+        StaffParcel: {
+            id: components["schemas"]["ParcelId"];
+            identifiers: components["schemas"]["Identifier"][];
+            recipientEmail: string;
+            recipientStudentNumber: string;
+            recipientName: string;
+            description: string;
+            storageLocation: string;
+            physicalReference: string;
+            /** @enum {string} */
+            source: "MANUAL" | "CAMERA";
+            status: components["schemas"]["ParcelStatus"];
+            receivedAt: components["schemas"]["Timestamp"];
+            orderId?: components["schemas"]["OrderId"];
+            studentId?: components["schemas"]["UserId"];
+            revision: number;
+            matchOutcome: components["schemas"]["MatchOutcome"];
+            matchExplanation: string;
+            hold: components["schemas"]["Hold"];
+            holdReason: string;
+            collectionEligible: boolean;
+            credentialState: components["schemas"]["CredentialState"];
+            audit: components["schemas"]["AuditEvent"][];
+            receiptId?: components["schemas"]["ReceiptId"];
+        };
+        StaffReceipt: {
+            id: components["schemas"]["ReceiptId"];
+            parcelId: components["schemas"]["ParcelId"];
+            orderId: components["schemas"]["OrderId"];
+            studentId: components["schemas"]["UserId"];
+            staffId: components["schemas"]["UserId"];
+            confirmedAt: components["schemas"]["Timestamp"];
+            storageLocation: string;
+            verificationId: components["schemas"]["VerificationId"];
+        };
+        OtpVerification: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            method: "OTP";
+            otp: string;
+        };
+        QrVerification: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            method: "QR";
+            qr: components["schemas"]["QrPayload"];
+        };
     };
     responses: {
         /** @description Error envelope. HTTP mapping: 400 validation; 401 authentication/session; 403 role; 404 resource absent or not owned; 409 duplicate, lifecycle, revision, idempotency or concurrent conflict; 410 expired credential/verification; 423 collection hold; 429 five failed OTP attempts; 503 network/persistence. Operation descriptions define specific codes. */
         Error: {
             headers: {
+                /** @description Required on all sensitive errors, including authentication and credential errors. */
+                "Cache-Control"?: "no-store";
                 [name: string]: unknown;
             };
             content: {
@@ -694,6 +808,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -723,6 +839,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -752,6 +870,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -783,6 +903,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -817,6 +939,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -850,6 +974,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -881,6 +1007,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -916,6 +1044,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -947,6 +1077,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -982,6 +1114,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1015,10 +1149,12 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Parcel"];
+                    "application/json": components["schemas"]["StaffParcel"];
                 };
             };
             400: components["responses"]["Error"];
@@ -1046,6 +1182,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1065,7 +1203,12 @@ export interface operations {
     };
     getReview: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Case-insensitive substring of active order ID, tracking value, student name/email/student number. No match is selected automatically. */
+                q?: string;
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 parcelId: components["schemas"]["ParcelId"];
@@ -1077,6 +1220,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1112,10 +1257,12 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Parcel"];
+                    "application/json": components["schemas"]["StaffParcel"];
                 };
             };
             400: components["responses"]["Error"];
@@ -1147,10 +1294,12 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Parcel"];
+                    "application/json": components["schemas"]["StaffParcel"];
                 };
             };
             400: components["responses"]["Error"];
@@ -1182,6 +1331,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1217,6 +1368,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1252,6 +1405,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1285,6 +1440,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1316,6 +1473,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1349,6 +1508,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1380,6 +1541,8 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1409,10 +1572,78 @@ export interface operations {
             /** @description Success */
             200: {
                 headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Ok"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            423: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getStaffParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parcelId: components["schemas"]["ParcelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffParcel"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            423: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getStaffReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                receiptId: components["schemas"]["ReceiptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    /** @description All authentication, credential, verification, confirmation, account-owned and staff evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP cache. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffReceipt"];
                 };
             };
             400: components["responses"]["Error"];

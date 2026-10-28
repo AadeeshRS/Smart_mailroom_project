@@ -15,12 +15,14 @@ async function fixture() {
   await a.login({ accountId: 'usr_asha', passcode: DEMO_PASSCODE }); await b.login({ accountId: 'usr_neel', passcode: DEMO_PASSCODE }); await staff.login({ accountId: 'usr_staff', passcode: DEMO_PASSCODE });
   return { storage, now, kernel, a, b, staff, advance: (ms: number) => { time += ms; } };
 }
-const orderInput = (merchantOrderId = 'AMZ-1001'): Input<'createOrder'> => ({ platform: 'AMAZON', merchantOrderId, tracking: [] });
-const label = (merchantOrderId = 'AMZ-1001', physicalReference = 'BOX-001'): Input<'intakeParcel'> => ({ identifiers: [{ kind: 'ORDER_ID', namespace: 'AMAZON', value: merchantOrderId }], recipientEmail: 'asha@students.example.invalid', recipientStudentNumber: 'DEMO1001', recipientName: 'Asha Rao', description: 'Brown box', physicalReference, storageLocation: 'Rack A2', source: 'MANUAL', labelReviewed: true });
+let keyCounter = 0;
+const writeKey = () => 'test-write-' + ++keyCounter;
+const orderInput = (merchantOrderId = 'AMZ-1001'): Input<'createOrder'> => ({ idempotencyKey: writeKey(), platform: 'AMAZON', merchantOrderId, tracking: [] });
+const label = (merchantOrderId = 'AMZ-1001', physicalReference = 'BOX-001'): Input<'intakeParcel'> => ({ idempotencyKey: writeKey(), identifiers: [{ kind: 'ORDER_ID', namespace: 'AMAZON', value: merchantOrderId }], recipientEmail: 'asha@students.example.invalid', recipientStudentNumber: 'DEMO1001', recipientName: 'Asha Rao', description: 'Brown box', physicalReference, storageLocation: 'Rack A2', source: 'MANUAL', labelReviewed: true });
 const issuance = (parcelId: string, key = 'issue-key-001', replace = false): Input<'issueCredential'> => ({ parcelId, idempotencyKey: key, replace });
 const confirm = (parcelId: string, verificationId: string, key = 'handover-key-001'): Input<'confirmHandover'> => ({ parcelId, verificationId, physicalHandoverConfirmed: true, idempotencyKey: key });
 async function ready(a: MailroomService, staff: MailroomService) { const order = await a.createOrder(orderInput()); const parcel = await staff.intakeParcel(label()); return { order, parcel }; }
-async function verified(a: MailroomService, staff: MailroomService, parcel: Schema<'Parcel'>) { const credential = await a.issueCredential(issuance(parcel.id)); const verification = await staff.verifyCredential({ parcelId: parcel.id, method: 'OTP', otp: credential.otp }); return { credential, verification }; }
+async function verified(a: MailroomService, staff: MailroomService, parcel: Pick<Schema<'Parcel'>, 'id'>) { const credential = await a.issueCredential(issuance(parcel.id)); const verification = await staff.verifyCredential({ parcelId: parcel.id, method: 'OTP', otp: credential.otp }); return { credential, verification }; }
 
 describe('complete mock journey', () => {
   it('registers, guides, matches, notifies, issues OTP/QR, verifies separately, confirms, retains and rejects reuse', async () => {
@@ -55,8 +57,8 @@ describe('matching and lifecycle safeguards', () => {
   });
   it('never compares an order ID with AWB or a different namespace', async () => {
     const { a, staff } = await fixture(); await a.createOrder(orderInput('SAME-TEXT'));
-    for (const [kind, namespace, physicalReference] of [['TRACKING', 'AMAZON', 'BOX-1'], ['ORDER_ID', 'FLIPKART', 'BOX-2']] as const) {
-      const p = await staff.intakeParcel({ ...label(), physicalReference, identifiers: [{ kind, namespace, value: 'SAME-TEXT' }] }); expect(p.studentId).toBeUndefined(); expect(p.matchOutcome).toBe('NO_MATCH');
+    for (const [kind, namespace, physicalReference] of [['TRACKING', 'EKART', 'BOX-1'], ['ORDER_ID', 'FLIPKART', 'BOX-2']] as const) {
+      const p = await staff.intakeParcel({ ...label(), physicalReference, identifiers: [({ kind, namespace, value: 'SAME-TEXT' } as Schema<'Identifier'>)] }); expect(p.studentId).toBeUndefined(); expect(p.matchOutcome).toBe('NO_MATCH');
     }
   });
   it('requires staff review when only a generic OTHER carrier namespace is comparable', async () => {
@@ -98,7 +100,7 @@ describe('matching and lifecycle safeguards', () => {
     await expect(a.issueCredential(issuance(parcel.id, 'new-issue-key'))).rejects.toMatchObject({ code: 'COLLECTION_HOLD' });
     await expect(staff.confirmHandover(confirm(parcel.id, verification.id))).rejects.toMatchObject({ code: 'COLLECTION_HOLD' });
     await expect(staff.setHold({ parcelId: parcel.id, hold: 'NONE', expectedRevision: held.revision, reason: 'Trying to bypass evidence review' })).rejects.toMatchObject({ code: 'COLLECTION_HOLD' });
-    const request: Input<'reconcileParcel'> = { parcelId: parcel.id, orderId: order.id, expectedRevision: held.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: false, reason: 'Label and provisioned profile reviewed; competing claim resolved.' };
+    const request: Input<'reconcileParcel'> = { idempotencyKey: writeKey(), parcelId: parcel.id, orderId: order.id, expectedRevision: held.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: false, reason: 'Label and provisioned profile reviewed; competing claim resolved.' };
     await expect(staff.reconcileParcel(request)).rejects.toMatchObject({ code: 'VALIDATION' });
     const resolved = await staff.reconcileParcel({ ...request, conflictsResolved: true }); expect(resolved.hold).toBe('NONE');
     await b.createOrder(orderInput('UNRELATED')); expect((await a.getParcel({ parcelId: parcel.id })).hold).toBe('NONE');
@@ -106,12 +108,12 @@ describe('matching and lifecycle safeguards', () => {
   });
   it('supports documented manual reconciliation without uploading evidence', async () => {
     const { a, staff } = await fixture(); const order = await a.createOrder(orderInput()); const p = await staff.intakeParcel({ ...label(), identifiers: [] });
-    const result = await staff.reconcileParcel({ parcelId: p.id, orderId: order.id, expectedRevision: p.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Physical label and independent provisioned student evidence checked.' }); expect(result.collectionEligible).toBe(true);
+    const result = await staff.reconcileParcel({ idempotencyKey: writeKey(), parcelId: p.id, orderId: order.id, expectedRevision: p.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Physical label and independent provisioned student evidence checked.' }); expect(result.collectionEligible).toBe(true);
   });
   it('a later trustworthy competing request holds a manually assigned parcel instead of leaving it collectable', async () => {
     const { a, b, staff } = await fixture(); const order = await a.createOrder(orderInput());
     const p = await staff.intakeParcel({ ...label('LATE-NEEL-ORDER'), recipientEmail: 'neel@students.example.invalid', recipientStudentNumber: 'DEMO1002' });
-    await staff.reconcileParcel({ parcelId: p.id, orderId: order.id, expectedRevision: p.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Demonstration manual decision before competing reference was registered.' });
+    await staff.reconcileParcel({ idempotencyKey: writeKey(), parcelId: p.id, orderId: order.id, expectedRevision: p.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Demonstration manual decision before competing reference was registered.' });
     await a.issueCredential(issuance(p.id)); await b.createOrder(orderInput('LATE-NEEL-ORDER'));
     const result = await staff.getParcel({ parcelId: p.id }); expect(result.studentId).toBe('usr_asha'); expect(result.hold).toBe('DISPUTE'); expect(result.collectionEligible).toBe(false); expect(result.credentialState).toBe('INVALIDATED');
   });
@@ -171,7 +173,7 @@ describe('authorization, credentials, verification and retry semantics', () => {
     expect(first.receipt.id).toBe(replay.receipt.id); expect(replay.replayed).toBe(true); expect((await f.staff.listReceipts({})).items).toHaveLength(1);
     await expect(f.staff.confirmHandover({ ...request, physicalHandoverConfirmed: false })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
     await expect(f.staff.confirmHandover({ ...request, idempotencyKey: 'different-key' })).rejects.toMatchObject({ code: 'ALREADY_COLLECTED' });
-    const closed = await f.staff.getParcel({ parcelId: parcel.id }); await expect(f.staff.reconcileParcel({ parcelId: parcel.id, orderId: order.id, expectedRevision: closed.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Attempt to reassign a collected parcel' })).rejects.toMatchObject({ code: 'ALREADY_COLLECTED' });
+    const closed = await f.staff.getParcel({ parcelId: parcel.id }); await expect(f.staff.reconcileParcel({ idempotencyKey: writeKey(), parcelId: parcel.id, orderId: order.id, expectedRevision: closed.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Attempt to reassign a collected parcel' })).rejects.toMatchObject({ code: 'ALREADY_COLLECTED' });
   });
   it('persists history and read state across fresh kernels, without credential secrets', async () => {
     const f = await fixture(); const { parcel } = await ready(f.a, f.staff); const { credential, verification } = await verified(f.a, f.staff, parcel);
@@ -196,7 +198,7 @@ describe('authorization, credentials, verification and retry semantics', () => {
   it('handles session expiry, logout, network retry, storage errors and pagination', async () => {
     const f = await fixture(); for (let n = 0; n < 3; n++) await f.a.createOrder(orderInput(`ORDER-${n}`));
     const first = await f.a.listOrders({ limit: 2 }); expect(first.items).toHaveLength(2); expect((await f.a.listOrders({ limit: 2, cursor: first.nextCursor })).items).toHaveLength(1);
-    await expect(f.a.listOrders({ cursor: 'bad' })).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(f.a.listOrders({ cursor: 'bad' })).rejects.toMatchObject({ code: 'CURSOR_INVALID' });
     f.kernel.setOnline(false); await expect(f.a.listOrders({})).rejects.toMatchObject({ code: 'NETWORK', retryable: true }); f.kernel.setOnline(true); expect((await f.a.listOrders({})).items).toHaveLength(3);
     f.storage.fail = true; await expect(f.a.createOrder(orderInput('UNSAVED'))).rejects.toMatchObject({ code: 'PERSISTENCE' }); f.storage.fail = false; expect((await f.a.listOrders({})).items).toHaveLength(3);
     await f.b.logout({}); await expect(f.b.listOrders({})).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });

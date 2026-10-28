@@ -1,18 +1,69 @@
 openapi: 3.0.3
 info:
   title: Smart Mailroom - DRAFT — FRONTEND PROTOTYPE
-  version: 0.1.0
-  description: Proposed canonical contract; independent review required before backend implementation.
-    No backend, SSO or notification provider exists. All IDs are typed prefixed strings; all
-    response timestamps UTC. Bearer sessions enforce role and ownership at service boundary;
-    resource-not-owned is NOT_FOUND. Mock authorization is illustrative, not production enforcement.
-    Collection eligibility = AWAITING_COLLECTION with linked active order/student and hold NONE.
-    MATCHED order means at least one linked shipment, not all arrived. Credential, hold and
-    notification states are independent of parcel lifecycle. No automatic matching from names or
-    cross-kind identifiers. Pagination is offset cursor, default 20 max 100, newest first; cursor
-    consistency under live writes remains a backend review decision. Error status mappings in
-    operation descriptions take precedence; all errors share ErrorEnvelope. External delivery states
-    are simulated only, independently of inbox read state.
+  version: 0.2.0
+  description: >-
+    DRAFT — FRONTEND PROTOTYPE. Proposed decisions below are complete for backend review, not
+    reviewer approval. Simple REST/JSON API; development-only provisioned authentication, bearer
+    demo sessions last 30 minutes. Production must omit demo login/reset. Roles and ownership
+    enforced at the service boundary; not-owned resources return NOT_FOUND. Backend IDs are prefixed
+    opaque cryptographically random values, never predictable frontend counters. UTC RFC3339
+    response timestamps end in Z. No backend, SSO or provider integration exists.
+
+
+    Pagination: first page freezes authorized matching membership and ordering for 15 minutes. Lists
+    sort createdAt/receivedAt/confirmedAt descending, then opaque id descending; candidates sort
+    comparable first then createdAt/id descending. Cursor is opaque, signed/unforgeable on a backend
+    and bound to principal, operation, filters, limit and snapshot. Concurrent inserts are excluded
+    until a new first-page request; updates are returned as current projections,
+    deleted/no-longer-authorized members are omitted without admitting new members. Filter
+    membership/order remains frozen. A cursor expires after 15 minutes, cannot cross
+    accounts/filters/limits, and may be rejected after mock restart: CURSOR_INVALID. No offset
+    pagination. Default 20/max 100; candidates max 50. Search max 100 characters, case-insensitive
+    substring over documented fields. No cursor grants authorization; recheck ownership on every
+    page.
+
+
+    Writes: createOrder/intakeParcel/reconcileParcel require principal+operation+key idempotency
+    with sorted-key semantic fingerprint, 24-hour successful-result retention. Failed writes do not
+    reserve keys. After expiry a request is fresh and domain uniqueness/revision checks apply.
+    addTracking is set-add idempotent; cancellation of an already-cancelled owned order returns it;
+    readNotification preserves first readAt. Hold changes require expectedRevision; replay after
+    uncertain hold change requires a read and deliberate new revision/decision. Confirmation
+    mappings are retained with permanent receipts and replay before expiry checks. Issuance replay
+    is available only with volatile original secrets/current session, otherwise explicit new-key
+    replacement is required. Details are normative in each operation. Cache-Control: no-store on all
+    sensitive responses and errors.
+
+
+    Matching: approved platform/carrier catalogs and normalization are defined in Platform/Carrier.
+    Unknown namespaces are rejected; OTHER requires review. Independent email/student-number
+    corroboration, exactly one unconflicted comparable candidate and no contradictions are required.
+    A carrier/tracking collision across distinct physical references blocks auto-allocation,
+    preserves every intake, holds affected uncollected assignments and requires documented review
+    per parcel. Sharing only merchant order ID permits legitimate split shipments. New relevant
+    evidence invalidates a reviewed decision; closed parcels never transfer. Collection eligibility
+    = AWAITING_COLLECTION + linked active order/student + hold NONE. MATCHED means at least one
+    linked parcel, not all shipments.
+
+
+    Privacy: common/student parcel and receipt operations return explicit public projections without
+    label evidence, audit actors, internal match/hold reasons or reconciliation free text. Internal
+    details are staff-only operations. Public notifications and error messages must not carry
+    private staff reasons. Candidate data is staff-only and bounded/searchable.
+
+
+    Notifications: persist an in-app event before exposing availability, once per
+    assignment/collection event; retries of successful writes do not duplicate notifications.
+    Inbox/readAt survive restart; readAt is independent of delivery. This mock persists simulated
+    ACCEPTED delivery only and contacts nobody. In a later backend, durable outbox attempts start
+    PENDING, provider acceptance becomes ACCEPTED, authenticated provider results become DELIVERED
+    or FAILED; acceptance is not delivery. Provider results are deduplicated by attempt/event ID,
+    reject stale/out-of-order updates and never change parcel lifecycle/readAt. Retry creates a new
+    delivery attempt, retaining previous outcome. No student/staff endpoint can assert a provider
+    result. simulatedExternal must remain true for every mock event. History and handover receipts
+    are retained until explicit development reset; production retention needs institutional policy
+    approval before production use, not a silent implementation choice.
 servers:
   - url: https://api.example.invalid/v1
     description: Placeholder only; app runs mock adapter
@@ -24,7 +75,9 @@ paths:
       operationId: login
       summary: Sign in to a fixed provisioned demonstration account
       description: Passcode is demonstration-only. Role is determined by the provisioned account; no
-        client role input. Session lasts 30 minutes. No SSO or domain verification.
+        client role input. Session lasts 30 minutes. No SSO or domain verification. Development
+        builds/environments only; production deployments must omit this operation (404
+        DEMO_DISABLED), never accept the demo passcode.
       parameters: []
       responses:
         "200":
@@ -33,6 +86,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -59,6 +121,7 @@ paths:
             schema:
               $ref: "#/components/schemas/LoginInput"
       security: []
+      x-development-only: true
   /session:
     get:
       operationId: getSession
@@ -72,6 +135,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -105,6 +177,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Ok"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -144,6 +225,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Guide"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -174,7 +264,10 @@ paths:
           in: query
           schema:
             type: string
-            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+            minLength: 1
+            maxLength: 200
+            description: "Opaque principal/operation/filter/limit-bound snapshot continuation, expires 15
+              minutes after first page. Invalid, expired or mismatched cursor: 400 CURSOR_INVALID."
         - name: limit
           in: query
           schema:
@@ -188,7 +281,7 @@ paths:
             type: string
             maxLength: 100
             description: "Case-insensitive substring search of authorized records. Orders: merchant order
-              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              ID/tracking. Parcels: ID, description, storage, physical reference. Staff parcel search also includes label identifiers; student search does not.
               Receipts: receipt/parcel/order IDs."
         - name: status
           in: query
@@ -201,6 +294,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderPage"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -228,7 +330,16 @@ paths:
         overlapping claims retained as disputed, never first-claim allocation. New claims or
         tracking additions re-evaluate all unclosed relevant parcels, invalidate credentials and
         hold assigned parcels on new ambiguity/conflict. Late orders use identical matching
-        safeguards."
+        safeguards. Required idempotencyKey. Scope is authenticated principal + operationId + key;
+        canonical fingerprint includes path and semantic JSON body except the key, with sorted
+        object keys. For 24 hours, same request replays the original response without repeating side
+        effects, even if the current resource revision has changed; different body/path gives 409
+        IDEMPOTENCY_CONFLICT. Only successful writes retain results; validation/authorization/state
+        errors do not reserve a key. Expired result entries may be removed and a later request
+        treated as fresh, subject to domain constraints; clients must use a new key after 24 hours.
+        Backend must commit resource changes and idempotency result together. A retry that changes
+        data requires an explicit new operation and key, not silent mutation of an uncertain
+        request."
       parameters: []
       responses:
         "200":
@@ -237,6 +348,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpectedOrder"
+              examples:
+                RegistrationSuccess:
+                  $ref: "#/components/examples/RegistrationSuccess"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -281,6 +404,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpectedOrder"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -319,6 +451,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpectedOrder"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -363,6 +504,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpectedOrder"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -394,7 +544,10 @@ paths:
           in: query
           schema:
             type: string
-            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+            minLength: 1
+            maxLength: 200
+            description: "Opaque principal/operation/filter/limit-bound snapshot continuation, expires 15
+              minutes after first page. Invalid, expired or mismatched cursor: 400 CURSOR_INVALID."
         - name: limit
           in: query
           schema:
@@ -408,7 +561,7 @@ paths:
             type: string
             maxLength: 100
             description: "Case-insensitive substring search of authorized records. Orders: merchant order
-              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              ID/tracking. Parcels: ID, description, storage, physical reference. Staff parcel search also includes label identifiers; student search does not.
               Receipts: receipt/parcel/order IDs."
         - name: status
           in: query
@@ -425,6 +578,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ParcelPage"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -455,8 +617,24 @@ paths:
         AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed
         case-normalized value, exactly one unconflicted candidate, email or student-number
         corroboration and no conflicting supplied recipient or comparable identifier. Name alone
-        never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot auto-match. Separate physical references support split
-        shipments.
+        never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot
+        auto-match. Separate physical references support split shipments. Required idempotencyKey.
+        Scope is authenticated principal + operationId + key; canonical fingerprint includes path
+        and semantic JSON body except the key, with sorted object keys. For 24 hours, same request
+        replays the original response without repeating side effects, even if the current resource
+        revision has changed; different body/path gives 409 IDEMPOTENCY_CONFLICT. Only successful
+        writes retain results; validation/authorization/state errors do not reserve a key. Expired
+        result entries may be removed and a later request treated as fresh, subject to domain
+        constraints; clients must use a new key after 24 hours. Backend must commit resource changes
+        and idempotency result together. A retry that changes data requires an explicit new
+        operation and key, not silent mutation of an uncertain request. A normalized
+        carrier/tracking value found on another physical reference, including a closed historical
+        parcel, is TRACKING_COLLISION. Save the new physical record unassigned as
+        AWAITING_MATCH/REVIEW; hold affected uncollected assignments as DISPUTE and invalidate
+        credentials. Never alter closed history. Staff must explicitly document a resolution for
+        each affected uncollected parcel. A reviewed collision resolution remains valid only for the
+        recorded collision membership/evidence. Sharing a merchant order ID alone is allowed for
+        split shipments.
       parameters: []
       responses:
         "200":
@@ -464,7 +642,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Parcel"
+                $ref: "#/components/schemas/StaffParcel"
+              examples:
+                IntakeMatched:
+                  $ref: "#/components/examples/IntakeMatched"
+                NoMatch:
+                  $ref: "#/components/examples/NoMatch"
+                Ambiguity:
+                  $ref: "#/components/examples/Ambiguity"
+                TrackingCollision:
+                  $ref: "#/components/examples/TrackingCollision"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -509,6 +705,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Parcel"
+              examples:
+                PublicParcel:
+                  $ref: "#/components/examples/PublicParcel"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -534,14 +742,38 @@ paths:
     get:
       operationId: getReview
       summary: Inspect candidate evidence; staff only
-      description: Comparable candidates first, then remaining active orders for evidence-led manual
-        reconciliation. Candidate profiles never exposed to student endpoints.
+      description: Staff-only searchable candidates. Active comparable requests first, then createdAt
+        descending and opaque ID descending. Default 20, maximum 50. Snapshot pagination rules below
+        apply; all evidence decisions recheck current parcel revision. Returning a candidate never
+        authorizes allocation.
       parameters:
         - name: parcelId
           in: path
           required: true
           schema:
             $ref: "#/components/schemas/ParcelId"
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+          description: Case-insensitive substring of active order ID, tracking value, student
+            name/email/student number. No match is selected automatically.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+            description: "Opaque principal/operation/filter/limit-bound snapshot continuation, expires 15
+              minutes after first page. Invalid, expired or mismatched cursor: 400 CURSOR_INVALID."
       responses:
         "200":
           description: Success
@@ -549,6 +781,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ParcelReview"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -579,7 +820,16 @@ paths:
         Review policy is a proposed decision for independent approval; no screenshot/document
         upload. A resolved decision remains effective for the reviewed claims. New relevant claims
         or identifiers invalidate the reviewed evidence baseline and trigger a new hold; unrelated
-        registrations do not.
+        registrations do not. Required idempotencyKey. Scope is authenticated principal +
+        operationId + key; canonical fingerprint includes path and semantic JSON body except the
+        key, with sorted object keys. For 24 hours, same request replays the original response
+        without repeating side effects, even if the current resource revision has changed; different
+        body/path gives 409 IDEMPOTENCY_CONFLICT. Only successful writes retain results;
+        validation/authorization/state errors do not reserve a key. Expired result entries may be
+        removed and a later request treated as fresh, subject to domain constraints; clients must
+        use a new key after 24 hours. Backend must commit resource changes and idempotency result
+        together. A retry that changes data requires an explicit new operation and key, not silent
+        mutation of an uncertain request.
       parameters:
         - name: parcelId
           in: path
@@ -592,7 +842,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Parcel"
+                $ref: "#/components/schemas/StaffParcel"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -619,6 +878,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ReconcileInput"
+            examples:
+              ReconciliationRequest:
+                $ref: "#/components/examples/ReconciliationRequest"
   /parcels/{parcelId}/hold:
     post:
       operationId: setHold
@@ -638,7 +900,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Parcel"
+                $ref: "#/components/schemas/StaffParcel"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -669,14 +940,18 @@ paths:
     post:
       operationId: issueCredential
       summary: Issue or explicitly replace parcel collection credential
-      description: "Eligible owner only; ten-minute validity, one current credential. Six-digit string OTP
-        and PII-free versioned QR. Same key/same body in same session replays original issuance
-        while active; changed body 409 IDEMPOTENCY_CONFLICT. Different key with active credential
-        and replace false: 409 CREDENTIAL_ACTIVE. replace true invalidates old OTP/QR and
-        verifications. Secrets only in issuance response, never list/detail/logs. Mock keeps secrets
-        in volatile memory; after restart old retry yields ISSUANCE_RETRY_UNAVAILABLE and student
-        must use a fresh key/replacement. Expired/invalidated key cannot silently issue another
-        credential. Backend replay/secret-retention policy needs review."
+      description: "Student owner and eligible parcel only. 6-digit OTP and PII-free QR, one current
+        credential, 10 minutes. Scope principal + issueCredential + key; metadata retained 24 hours.
+        Same key/body replays only while the original current unexpired credential secrets remain in
+        volatile issuance memory in that same authenticated session. Replacement, expiry, session
+        change or process restart makes replay unavailable: 409 ISSUANCE_RETRY_UNAVAILABLE. After 24
+        hours the key may be fresh, but active-credential checks still apply. To recover explicitly
+        choose replacement with replace=true and a NEW key; this invalidates prior
+        OTP/QR/verification. No plaintext credential persistence is required or allowed in the mock.
+        Future backend may retain an encrypted replay envelope for at most the issuance
+        session/credential lifetime; hashes alone must never be presented as recoverable secrets.
+        Responses and errors Cache-Control: no-store; secrets never appear in logs or list/detail
+        endpoints."
       parameters:
         - name: parcelId
           in: path
@@ -690,6 +965,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Credential"
+              examples:
+                CredentialIssuance:
+                  $ref: "#/components/examples/CredentialIssuance"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -738,6 +1025,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Verification"
+              examples:
+                VerificationSuccess:
+                  $ref: "#/components/examples/VerificationSuccess"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -764,19 +1063,31 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/VerifyInput"
+            examples:
+              OTP:
+                $ref: "#/components/examples/VerifyOtp"
+              QR:
+                $ref: "#/components/examples/VerifyQr"
   /parcels/{parcelId}/handover:
     post:
       operationId: confirmHandover
       summary: Explicitly confirm physical handover or replay original receipt
-      description: "Requires true physicalHandoverConfirmed, valid bound verification and idempotencyKey.
-        Same staff account/key/body replays original retained receipt even after restart or
-        verification expiry. Reusing key with changed body: 409 IDEMPOTENCY_CONFLICT. Different
-        successful key for already CLOSED: ALREADY_COLLECTED; changed revision: REVISION_CHANGED;
-        hold: COLLECTION_HOLD; stale competing verification: CONCURRENT_CONFLICT; expired
-        verification: VERIFICATION_EXPIRED. One receipt per parcel. Backend must atomically recheck
-        authorization, hold, revision, current credential, verification, update CLOSED, consume
-        credential and insert receipt/idempotency record. Mock simulates serialized state changes
-        only, not database safety."
+      description: Staff only. Fresh authorization requires true physicalHandoverConfirmed and
+        verification bound to current credential, parcel revision and STAFF SESSION; verification
+        expires at min(2 minutes, credential expiry). Idempotency scope is staff ACCOUNT +
+        confirmHandover + key; fingerprint includes exact parcelId, verificationId and
+        physicalHandoverConfirmed. Persist the original request/key before attempting confirmation
+        and keep it on uncertain outcome; never silently mint a fresh key. Replay lookup precedes
+        verification/credential expiry and current lifecycle checks. A committed same-body result
+        replays the original receipt after verification expiry, logout/login, process restart or
+        CLOSED status. Different body/path gives 409 IDEMPOTENCY_CONFLICT. Handover mappings are
+        retained for the lifetime of their retained receipt (stronger than ordinary 24-hour writes).
+        Without a committed result, expired/missing verification gives 410 VERIFICATION_EXPIRED; it
+        cannot create a handover. Holds/revision changes/credential changes/already-collected fresh
+        attempts remain rejected. Recovery is account-scoped; no session token, OTP or QR secret is
+        persisted by the client. Backend must atomically recheck, consume credential, close parcel,
+        create one receipt and store idempotency result. Mock serialization is not database
+        atomicity evidence.
       parameters:
         - name: parcelId
           in: path
@@ -790,6 +1101,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Confirmation"
+              examples:
+                ConfirmationReplay:
+                  $ref: "#/components/examples/ConfirmationReplay"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -816,6 +1139,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ConfirmInput"
+            examples:
+              ConfirmationRequest:
+                $ref: "#/components/examples/ConfirmationRequest"
   /notifications:
     get:
       operationId: listNotifications
@@ -826,7 +1152,10 @@ paths:
           in: query
           schema:
             type: string
-            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+            minLength: 1
+            maxLength: 200
+            description: "Opaque principal/operation/filter/limit-bound snapshot continuation, expires 15
+              minutes after first page. Invalid, expired or mismatched cursor: 400 CURSOR_INVALID."
         - name: limit
           in: query
           schema:
@@ -840,7 +1169,7 @@ paths:
             type: string
             maxLength: 100
             description: "Case-insensitive substring search of authorized records. Orders: merchant order
-              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              ID/tracking. Parcels: ID, description, storage, physical reference. Staff parcel search also includes label identifiers; student search does not.
               Receipts: receipt/parcel/order IDs."
       responses:
         "200":
@@ -849,6 +1178,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationPage"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -887,6 +1225,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Notification"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -917,7 +1264,10 @@ paths:
           in: query
           schema:
             type: string
-            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+            minLength: 1
+            maxLength: 200
+            description: "Opaque principal/operation/filter/limit-bound snapshot continuation, expires 15
+              minutes after first page. Invalid, expired or mismatched cursor: 400 CURSOR_INVALID."
         - name: limit
           in: query
           schema:
@@ -931,7 +1281,7 @@ paths:
             type: string
             maxLength: 100
             description: "Case-insensitive substring search of authorized records. Orders: merchant order
-              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              ID/tracking. Parcels: ID, description, storage, physical reference. Staff parcel search also includes label identifiers; student search does not.
               Receipts: receipt/parcel/order IDs."
       responses:
         "200":
@@ -940,6 +1290,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReceiptPage"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -979,6 +1338,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Receipt"
+              examples:
+                PublicReceipt:
+                  $ref: "#/components/examples/PublicReceipt"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -1004,7 +1375,10 @@ paths:
     post:
       operationId: resetDemo
       summary: Explicitly reset synthetic demo data and revoke all sessions
-      description: Explicitly reset synthetic demo data and revoke all sessions
+      description: Explicitly reset synthetic demo data and revoke all sessions Development
+        builds/environments only; production must omit it (404 DEMO_DISABLED). Mock kernel can
+        disable demo operations. Reset erases all synthetic records and idempotency results and
+        revokes sessions; clients clear their confirmation recovery records.
       parameters: []
       responses:
         "200":
@@ -1013,6 +1387,112 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Ok"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      x-development-only: true
+  /staff/parcels/{parcelId}:
+    get:
+      operationId: getStaffParcel
+      summary: Read staff-only StaffParcel
+      description: Authenticated staff only. Includes internal evidence/audit metadata; student calls
+        return FORBIDDEN.
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffParcel"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+  /staff/receipts/{receiptId}:
+    get:
+      operationId: getStaffReceipt
+      summary: Read staff-only StaffReceipt
+      description: Authenticated staff only. Includes internal evidence/audit metadata; student calls
+        return FORBIDDEN.
+      parameters:
+        - name: receiptId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ReceiptId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffReceipt"
+          headers:
+            Cache-Control:
+              description: All authentication, credential, verification, confirmation, account-owned and staff
+                evidence responses, including errors, MUST use no-store. Demo adapters have no HTTP
+                cache.
+              schema:
+                type: string
+                enum:
+                  - no-store
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -1043,24 +1523,59 @@ components:
     UserId:
       type: string
       pattern: ^usr_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     OrderId:
       type: string
       pattern: ^ord_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     ParcelId:
       type: string
       pattern: ^par_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     NotificationId:
       type: string
       pattern: ^ntf_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     CredentialId:
       type: string
       pattern: ^crd_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     VerificationId:
       type: string
       pattern: ^ver_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     ReceiptId:
       type: string
       pattern: ^rcp_[A-Za-z0-9_-]+$
+      description: Opaque prefixed identifier. Backend uses at least 128 bits from a cryptographically
+        secure random generator, for example a prefix plus base64url encoding of 16 random bytes.
+        Never derive IDs from frontend counters, names or database row counts. Counter IDs in the
+        deterministic local demo are not a backend allocation scheme.
+      maxLength: 128
     Timestamp:
       type: string
       format: date-time
@@ -1072,6 +1587,10 @@ components:
         - FLIPKART
         - MYNTRA
         - OTHER
+      description: "Approved catalog. Canonical uppercase namespace keys only. AMAZON and MYNTRA order
+        IDs: trim, case-sensitive, preserve punctuation. FLIPKART: trim and uppercase. OTHER: trim,
+        case-sensitive and review-only. These are prototype comparison policies, not merchant
+        integrations."
     OrderStatus:
       type: string
       enum:
@@ -1100,6 +1619,7 @@ components:
         - CONFLICT
         - DUPLICATE
         - INSUFFICIENT_EVIDENCE
+        - TRACKING_COLLISION
     CredentialState:
       type: string
       enum:
@@ -1134,6 +1654,36 @@ components:
         - IDEMPOTENCY_CONFLICT
         - NETWORK
         - PERSISTENCE
+        - UNKNOWN_NAMESPACE
+        - DEMO_DISABLED
+        - CURSOR_INVALID
+      x-http-status-codes:
+        VALIDATION: 400
+        UNAUTHENTICATED: 401
+        SESSION_EXPIRED: 401
+        FORBIDDEN: 403
+        NOT_FOUND: 404
+        DUPLICATE_ORDER: 409
+        DUPLICATE_INTAKE: 409
+        CANCELLATION_INELIGIBLE: 409
+        COLLECTION_HOLD: 423
+        NOT_ELIGIBLE: 409
+        CREDENTIAL_ACTIVE: 409
+        ISSUANCE_RETRY_UNAVAILABLE: 409
+        INVALID_CREDENTIAL: 409
+        CREDENTIAL_EXPIRED: 410
+        CREDENTIAL_INVALIDATED: 409
+        ATTEMPTS_EXCEEDED: 429
+        VERIFICATION_EXPIRED: 410
+        REVISION_CHANGED: 409
+        ALREADY_COLLECTED: 409
+        CONCURRENT_CONFLICT: 409
+        IDEMPOTENCY_CONFLICT: 409
+        NETWORK: transport-error-no-http-response
+        PERSISTENCE: 503
+        UNKNOWN_NAMESPACE: 400
+        DEMO_DISABLED: 404
+        CURSOR_INVALID: 400
     ErrorEnvelope:
       type: object
       additionalProperties: false
@@ -1214,29 +1764,14 @@ components:
         ok:
           type: boolean
     Identifier:
-      type: object
-      additionalProperties: false
-      required:
-        - kind
-        - namespace
-        - value
-      properties:
-        kind:
-          type: string
-          enum:
-            - ORDER_ID
-            - TRACKING
-        namespace:
-          type: string
-          minLength: 1
-          maxLength: 40
-        value:
-          type: string
-          minLength: 1
-          maxLength: 100
-      description: ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier.
-        Namespace and values normalize by trim + uppercase in this demo. OTHER platform always
-        requires staff review. A match only in the generic OTHER carrier namespace also requires review. Carrier alias/normalization policy needs backend review.
+      oneOf:
+        - $ref: "#/components/schemas/OrderIdentifier"
+        - $ref: "#/components/schemas/TrackingReference"
+      discriminator:
+        propertyName: kind
+        mapping:
+          ORDER_ID: "#/components/schemas/OrderIdentifier"
+          TRACKING: "#/components/schemas/TrackingReference"
     TrackingReference:
       type: object
       additionalProperties: false
@@ -1250,9 +1785,7 @@ components:
           enum:
             - TRACKING
         namespace:
-          type: string
-          minLength: 1
-          maxLength: 40
+          $ref: "#/components/schemas/Carrier"
         value:
           type: string
           minLength: 1
@@ -1264,6 +1797,7 @@ components:
         - platform
         - merchantOrderId
         - tracking
+        - idempotencyKey
       properties:
         platform:
           $ref: "#/components/schemas/Platform"
@@ -1275,6 +1809,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TrackingReference"
+          maxItems: 20
+        idempotencyKey: &a1
+          type: string
+          minLength: 8
+          maxLength: 100
     AddTracking:
       type: object
       additionalProperties: false
@@ -1332,17 +1871,22 @@ components:
         - physicalReference
         - source
         - labelReviewed
+        - idempotencyKey
       properties:
         identifiers:
           type: array
           items:
             $ref: "#/components/schemas/Identifier"
+          maxItems: 20
         recipientEmail:
           type: string
+          maxLength: 254
         recipientStudentNumber:
           type: string
+          maxLength: 40
         recipientName:
           type: string
+          maxLength: 120
         description:
           type: string
           minLength: 1
@@ -1362,6 +1906,7 @@ components:
             - CAMERA
         labelReviewed:
           type: boolean
+        idempotencyKey: *a1
     AuditEvent:
       type: object
       additionalProperties: false
@@ -1384,14 +1929,9 @@ components:
       additionalProperties: false
       required:
         - id
-        - identifiers
-        - recipientEmail
-        - recipientStudentNumber
-        - recipientName
         - description
         - storageLocation
         - physicalReference
-        - source
         - status
         - receivedAt
         - revision
@@ -1401,31 +1941,15 @@ components:
         - holdReason
         - collectionEligible
         - credentialState
-        - audit
       properties:
         id:
           $ref: "#/components/schemas/ParcelId"
-        identifiers:
-          type: array
-          items:
-            $ref: "#/components/schemas/Identifier"
-        recipientEmail:
-          type: string
-        recipientStudentNumber:
-          type: string
-        recipientName:
-          type: string
         description:
           type: string
         storageLocation:
           type: string
         physicalReference:
           type: string
-        source:
-          type: string
-          enum:
-            - MANUAL
-            - CAMERA
         status:
           $ref: "#/components/schemas/ParcelStatus"
         receivedAt:
@@ -1441,20 +1965,29 @@ components:
           $ref: "#/components/schemas/MatchOutcome"
         matchExplanation:
           type: string
+          description: Allowlisted public status explanation only.
+          enum:
+            - Collected; retained receipt available.
+            - Mailroom review is required before collection.
+            - Matched parcel is ready for collection.
+            - Awaiting mailroom matching review.
         hold:
           $ref: "#/components/schemas/Hold"
         holdReason:
           type: string
+          description: Generic public collection-hold explanation only.
+          enum:
+            - ""
+            - Collection is paused pending mailroom review.
         collectionEligible:
           type: boolean
         credentialState:
           $ref: "#/components/schemas/CredentialState"
-        audit:
-          type: array
-          items:
-            $ref: "#/components/schemas/AuditEvent"
         receiptId:
           $ref: "#/components/schemas/ReceiptId"
+      description: Explicit public projection used by students and common parcel reads. matchExplanation
+        and holdReason are allowlisted public messages, never label evidence, staff actor IDs or
+        reconciliation free text. Staff details use getStaffParcel/getReview.
     Candidate:
       type: object
       additionalProperties: false
@@ -1485,11 +2018,15 @@ components:
         - candidates
       properties:
         parcel:
-          $ref: "#/components/schemas/Parcel"
+          $ref: "#/components/schemas/StaffParcel"
         candidates:
           type: array
           items:
             $ref: "#/components/schemas/Candidate"
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 200
     ReconcileInput:
       type: object
       additionalProperties: false
@@ -1500,6 +2037,7 @@ components:
         - recipientVerified
         - conflictsResolved
         - reason
+        - idempotencyKey
       properties:
         orderId:
           $ref: "#/components/schemas/OrderId"
@@ -1516,6 +2054,7 @@ components:
           type: string
           minLength: 12
           maxLength: 500
+        idempotencyKey: *a1
     HoldInput:
       type: object
       additionalProperties: false
@@ -1602,6 +2141,7 @@ components:
         token:
           type: string
           minLength: 16
+          maxLength: 256
     Credential:
       type: object
       additionalProperties: false
@@ -1627,23 +2167,14 @@ components:
         expiresAt:
           $ref: "#/components/schemas/Timestamp"
     VerifyInput:
-      type: object
-      additionalProperties: false
-      required:
-        - method
-      properties:
-        method:
-          type: string
-          enum:
-            - OTP
-            - QR
-        otp:
-          type: string
-          pattern: ^[0-9]{6}$
-        qr:
-          $ref: "#/components/schemas/QrPayload"
-      description: method OTP requires otp and no qr; method QR requires qr and no otp. Extra secret
-        fields are not accepted by a future HTTP adapter. Mock validates the selected method.
+      oneOf:
+        - $ref: "#/components/schemas/OtpVerification"
+        - $ref: "#/components/schemas/QrVerification"
+      discriminator:
+        propertyName: method
+        mapping:
+          OTP: "#/components/schemas/OtpVerification"
+          QR: "#/components/schemas/QrVerification"
     Verification:
       type: object
       additionalProperties: false
@@ -1670,7 +2201,7 @@ components:
         student:
           $ref: "#/components/schemas/Profile"
         parcel:
-          $ref: "#/components/schemas/Parcel"
+          $ref: "#/components/schemas/StaffParcel"
     ConfirmInput:
       type: object
       additionalProperties: false
@@ -1695,10 +2226,8 @@ components:
         - parcelId
         - orderId
         - studentId
-        - staffId
         - confirmedAt
         - storageLocation
-        - verificationId
       properties:
         id:
           $ref: "#/components/schemas/ReceiptId"
@@ -1708,14 +2237,11 @@ components:
           $ref: "#/components/schemas/OrderId"
         studentId:
           $ref: "#/components/schemas/UserId"
-        staffId:
-          $ref: "#/components/schemas/UserId"
         confirmedAt:
           $ref: "#/components/schemas/Timestamp"
         storageLocation:
           type: string
-        verificationId:
-          $ref: "#/components/schemas/VerificationId"
+      description: Public retained receipt projection. Staff actor and verification reference are excluded.
     Confirmation:
       type: object
       additionalProperties: false
@@ -1724,7 +2250,7 @@ components:
         - replayed
       properties:
         receipt:
-          $ref: "#/components/schemas/Receipt"
+          $ref: "#/components/schemas/StaffReceipt"
         replayed:
           type: boolean
     Guide:
@@ -1794,6 +2320,168 @@ components:
             $ref: "#/components/schemas/Receipt"
         nextCursor:
           type: string
+    Carrier:
+      type: string
+      enum:
+        - DELHIVERY
+        - BLUEDART
+        - EKART
+        - OTHER
+      description: "Approved catalog. Canonical uppercase namespace keys only. DELHIVERY and EKART: trim
+        and uppercase identifier; BLUEDART: remove ASCII spaces, digits only, preserve leading
+        zeros. OTHER: trim, case-sensitive, review-only. No other carrier namespace is accepted."
+    OrderIdentifier:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - namespace
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - ORDER_ID
+        namespace:
+          $ref: "#/components/schemas/Platform"
+        value:
+          type: string
+          minLength: 1
+          maxLength: 100
+    StaffParcel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - identifiers
+        - recipientEmail
+        - recipientStudentNumber
+        - recipientName
+        - description
+        - storageLocation
+        - physicalReference
+        - source
+        - status
+        - receivedAt
+        - revision
+        - matchOutcome
+        - matchExplanation
+        - hold
+        - holdReason
+        - collectionEligible
+        - credentialState
+        - audit
+      properties:
+        id:
+          $ref: "#/components/schemas/ParcelId"
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        recipientEmail:
+          type: string
+        recipientStudentNumber:
+          type: string
+        recipientName:
+          type: string
+        description:
+          type: string
+        storageLocation:
+          type: string
+        physicalReference:
+          type: string
+        source:
+          type: string
+          enum:
+            - MANUAL
+            - CAMERA
+        status:
+          $ref: "#/components/schemas/ParcelStatus"
+        receivedAt:
+          $ref: "#/components/schemas/Timestamp"
+        orderId:
+          $ref: "#/components/schemas/OrderId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        revision:
+          type: integer
+          minimum: 1
+        matchOutcome:
+          $ref: "#/components/schemas/MatchOutcome"
+        matchExplanation:
+          type: string
+        hold:
+          $ref: "#/components/schemas/Hold"
+        holdReason:
+          type: string
+        collectionEligible:
+          type: boolean
+        credentialState:
+          $ref: "#/components/schemas/CredentialState"
+        audit:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        receiptId:
+          $ref: "#/components/schemas/ReceiptId"
+      description: Staff-only physical label evidence, internal match/hold reasons and audit actors. Never
+        returned by common or student parcel reads.
+    StaffReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - parcelId
+        - orderId
+        - studentId
+        - staffId
+        - confirmedAt
+        - storageLocation
+        - verificationId
+      properties:
+        id:
+          $ref: "#/components/schemas/ReceiptId"
+        parcelId:
+          $ref: "#/components/schemas/ParcelId"
+        orderId:
+          $ref: "#/components/schemas/OrderId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        staffId:
+          $ref: "#/components/schemas/UserId"
+        confirmedAt:
+          $ref: "#/components/schemas/Timestamp"
+        storageLocation:
+          type: string
+        verificationId:
+          $ref: "#/components/schemas/VerificationId"
+    OtpVerification:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - otp
+      properties:
+        method:
+          type: string
+          enum:
+            - OTP
+        otp:
+          type: string
+          pattern: ^[0-9]{6}$
+    QrVerification:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - qr
+      properties:
+        method:
+          type: string
+          enum:
+            - QR
+        qr:
+          $ref: "#/components/schemas/QrPayload"
   responses:
     Error:
       description: "Error envelope. HTTP mapping: 400 validation; 401 authentication/session; 403 role;
@@ -1804,3 +2492,457 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            IDEMPOTENCY_CONFLICT:
+              $ref: "#/components/examples/IDEMPOTENCY_CONFLICT"
+            VERIFICATION_EXPIRED:
+              $ref: "#/components/examples/VERIFICATION_EXPIRED"
+            COLLECTION_HOLD:
+              $ref: "#/components/examples/COLLECTION_HOLD"
+            DUPLICATE_INTAKE:
+              $ref: "#/components/examples/DUPLICATE_INTAKE"
+            UNKNOWN_NAMESPACE:
+              $ref: "#/components/examples/UNKNOWN_NAMESPACE"
+            ISSUANCE_RETRY_UNAVAILABLE:
+              $ref: "#/components/examples/ISSUANCE_RETRY_UNAVAILABLE"
+            CURSOR_INVALID:
+              $ref: "#/components/examples/CURSOR_INVALID"
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+              - no-store
+          description: Required on all sensitive errors, including authentication and credential errors.
+  examples:
+    RegistrationRequest:
+      summary: RegistrationRequest
+      x-schema: CreateOrder
+      value:
+        platform: AMAZON
+        merchantOrderId: AMZ-EXAMPLE
+        tracking: []
+        idempotencyKey: example-register-key
+    RegistrationSuccess:
+      summary: RegistrationSuccess
+      x-schema: ExpectedOrder
+      value:
+        id: ord_example01
+        studentId: usr_asha
+        platform: AMAZON
+        merchantOrderId: AMZ-EXAMPLE
+        tracking: []
+        status: PENDING
+        createdAt: 2026-10-28T07:00:00.000Z
+        parcelIds: []
+        duplicateClaim: false
+    IntakeRequest:
+      summary: IntakeRequest
+      x-schema: IntakeInput
+      value:
+        identifiers: &a2
+          - kind: ORDER_ID
+            namespace: AMAZON
+            value: AMZ-EXAMPLE
+        recipientEmail: asha@students.example.invalid
+        recipientStudentNumber: DEMO1001
+        recipientName: Asha Rao
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        source: MANUAL
+        labelReviewed: true
+        idempotencyKey: example-intake-key
+    IntakeMatched:
+      summary: IntakeMatched
+      x-schema: StaffParcel
+      value: &a5
+        id: par_example01
+        identifiers: *a2
+        recipientEmail: asha@students.example.invalid
+        recipientStudentNumber: DEMO1001
+        recipientName: Asha Rao
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        source: MANUAL
+        status: AWAITING_COLLECTION
+        receivedAt: 2026-10-28T08:00:00.000Z
+        orderId: ord_example01
+        studentId: usr_asha
+        revision: 2
+        matchOutcome: MATCHED
+        matchExplanation: Unique corroborated reference.
+        hold: NONE
+        holdReason: ""
+        collectionEligible: true
+        credentialState: NONE
+        audit: &a3
+          - at: 2026-10-28T08:00:00.000Z
+            action: RECEIVED
+            actorId: usr_staff
+            reason: Physical intake reviewed.
+    NoMatch:
+      summary: NoMatch
+      x-schema: StaffParcel
+      value:
+        id: par_example01
+        identifiers: *a2
+        recipientEmail: asha@students.example.invalid
+        recipientStudentNumber: DEMO1001
+        recipientName: Asha Rao
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        source: MANUAL
+        status: AWAITING_MATCH
+        receivedAt: 2026-10-28T08:00:00.000Z
+        revision: 2
+        matchOutcome: NO_MATCH
+        matchExplanation: NoMatch
+        hold: NONE
+        holdReason: ""
+        collectionEligible: false
+        credentialState: NONE
+        audit: *a3
+    Ambiguity:
+      summary: Ambiguity
+      x-schema: StaffParcel
+      value:
+        id: par_example01
+        identifiers: *a2
+        recipientEmail: asha@students.example.invalid
+        recipientStudentNumber: DEMO1001
+        recipientName: Asha Rao
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        source: MANUAL
+        status: AWAITING_MATCH
+        receivedAt: 2026-10-28T08:00:00.000Z
+        revision: 2
+        matchOutcome: AMBIGUOUS
+        matchExplanation: Ambiguity
+        hold: NONE
+        holdReason: ""
+        collectionEligible: false
+        credentialState: NONE
+        audit: *a3
+    TrackingCollision:
+      summary: TrackingCollision
+      x-schema: StaffParcel
+      value:
+        id: par_example01
+        identifiers: *a2
+        recipientEmail: asha@students.example.invalid
+        recipientStudentNumber: DEMO1001
+        recipientName: Asha Rao
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        source: MANUAL
+        status: AWAITING_MATCH
+        receivedAt: 2026-10-28T08:00:00.000Z
+        revision: 2
+        matchOutcome: TRACKING_COLLISION
+        matchExplanation: TrackingCollision
+        hold: REVIEW
+        holdReason: ""
+        collectionEligible: false
+        credentialState: NONE
+        audit: *a3
+    CredentialIssuance:
+      summary: CredentialIssuance
+      x-schema: Credential
+      value:
+        id: crd_example01
+        parcelId: par_example01
+        otp: "012345"
+        qr: &a4
+          v: 1
+          credentialRef: crd_example01
+          token: synthetic-example-token-only
+        issuedAt: 2026-10-28T08:01:00.000Z
+        expiresAt: 2026-10-28T08:11:00.000Z
+    VerifyOtp:
+      summary: VerifyOtp
+      x-schema: VerifyInput
+      value:
+        method: OTP
+        otp: "012345"
+    VerifyQr:
+      summary: VerifyQr
+      x-schema: VerifyInput
+      value:
+        method: QR
+        qr: *a4
+    VerificationSuccess:
+      summary: VerificationSuccess
+      x-schema: Verification
+      value:
+        id: ver_example01
+        parcelId: par_example01
+        credentialId: crd_example01
+        parcelRevision: 2
+        expiresAt: 2026-10-28T08:03:00.000Z
+        student:
+          id: usr_asha
+          name: Asha Rao
+          email: asha@students.example.invalid
+          studentNumber: DEMO1001
+          role: STUDENT
+        parcel: *a5
+    ConfirmationReplay:
+      summary: ConfirmationReplay
+      x-schema: Confirmation
+      value:
+        receipt:
+          id: rcp_example01
+          parcelId: par_example01
+          orderId: ord_example01
+          studentId: usr_asha
+          staffId: usr_staff
+          confirmedAt: 2026-10-28T08:03:00.000Z
+          storageLocation: Rack A2
+          verificationId: ver_example01
+        replayed: true
+    IDEMPOTENCY_CONFLICT:
+      summary: IDEMPOTENCY_CONFLICT
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: IDEMPOTENCY_CONFLICT
+          message: "Synthetic example: IDEMPOTENCY_CONFLICT"
+          requestId: example-request
+          retryable: false
+    VERIFICATION_EXPIRED:
+      summary: VERIFICATION_EXPIRED
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: VERIFICATION_EXPIRED
+          message: "Synthetic example: VERIFICATION_EXPIRED"
+          requestId: example-request
+          retryable: false
+    COLLECTION_HOLD:
+      summary: COLLECTION_HOLD
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: COLLECTION_HOLD
+          message: "Synthetic example: COLLECTION_HOLD"
+          requestId: example-request
+          retryable: false
+    DUPLICATE_INTAKE:
+      summary: DUPLICATE_INTAKE
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: DUPLICATE_INTAKE
+          message: "Synthetic example: DUPLICATE_INTAKE"
+          requestId: example-request
+          retryable: false
+    UNKNOWN_NAMESPACE:
+      summary: UNKNOWN_NAMESPACE
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: UNKNOWN_NAMESPACE
+          message: "Synthetic example: UNKNOWN_NAMESPACE"
+          requestId: example-request
+          retryable: false
+    ISSUANCE_RETRY_UNAVAILABLE:
+      summary: ISSUANCE_RETRY_UNAVAILABLE
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: ISSUANCE_RETRY_UNAVAILABLE
+          message: "Synthetic example: ISSUANCE_RETRY_UNAVAILABLE"
+          requestId: example-request
+          retryable: false
+    CURSOR_INVALID:
+      summary: CURSOR_INVALID
+      x-schema: ErrorEnvelope
+      value:
+        error:
+          code: CURSOR_INVALID
+          message: "Synthetic example: CURSOR_INVALID"
+          requestId: example-request
+          retryable: false
+    PublicParcel:
+      summary: PublicParcel
+      x-schema: Parcel
+      value:
+        id: par_example01
+        description: Small brown box
+        storageLocation: Rack A2
+        physicalReference: BOX-EXAMPLE
+        status: AWAITING_COLLECTION
+        receivedAt: 2026-10-28T08:00:00.000Z
+        orderId: ord_example01
+        studentId: usr_asha
+        revision: 2
+        matchOutcome: MATCHED
+        matchExplanation: Matched parcel is ready for collection.
+        hold: NONE
+        holdReason: ""
+        collectionEligible: true
+        credentialState: NONE
+    PublicReceipt:
+      summary: PublicReceipt
+      x-schema: Receipt
+      value:
+        id: rcp_example01
+        parcelId: par_example01
+        orderId: ord_example01
+        studentId: usr_asha
+        confirmedAt: 2026-10-28T08:03:00.000Z
+        storageLocation: Rack A2
+    ConfirmationRequest:
+      summary: ConfirmationRequest
+      x-schema: ConfirmInput
+      value:
+        verificationId: ver_example01
+        physicalHandoverConfirmed: true
+        idempotencyKey: example-confirmation-key
+    ReconciliationRequest:
+      summary: ReconciliationRequest
+      x-schema: ReconcileInput
+      value:
+        orderId: ord_example01
+        expectedRevision: 2
+        identifierReviewed: true
+        recipientVerified: true
+        conflictsResolved: true
+        reason: Physical identifiers and competing evidence reviewed by staff.
+        idempotencyKey: example-reconciliation-key
+x-invalid-examples:
+  - schema: VerifyInput
+    value:
+      method: OTP
+  - schema: VerifyInput
+    value:
+      method: QR
+  - schema: VerifyInput
+    value:
+      method: OTP
+      otp: "012345"
+      qr: *a4
+  - schema: VerifyInput
+    value:
+      method: QR
+      otp: "012345"
+      qr: *a4
+  - schema: CreateOrder
+    value:
+      platform: AMAZON
+      merchantOrderId: AMZ-EXAMPLE
+      tracking:
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+        - kind: TRACKING
+          namespace: EKART
+          value: OVER-LIMIT
+      idempotencyKey: example-register-key
+  - schema: IntakeInput
+    value:
+      identifiers: *a2
+      recipientEmail: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      recipientStudentNumber: DEMO1001
+      recipientName: Asha Rao
+      description: Small brown box
+      storageLocation: Rack A2
+      physicalReference: BOX-EXAMPLE
+      source: MANUAL
+      labelReviewed: true
+      idempotencyKey: example-intake-key
+  - schema: Identifier
+    value:
+      kind: TRACKING
+      namespace: UNAPPROVED
+      value: "123"
+  - schema: Parcel
+    value:
+      id: par_example01
+      description: Small brown box
+      storageLocation: Rack A2
+      physicalReference: BOX-EXAMPLE
+      status: AWAITING_COLLECTION
+      receivedAt: 2026-10-28T08:00:00.000Z
+      orderId: ord_example01
+      studentId: usr_asha
+      revision: 2
+      matchOutcome: MATCHED
+      matchExplanation: Matched parcel is ready for collection.
+      hold: NONE
+      holdReason: ""
+      collectionEligible: true
+      credentialState: NONE
+      audit: []
+  - schema: Receipt
+    value:
+      id: rcp_example01
+      parcelId: par_example01
+      orderId: ord_example01
+      studentId: usr_asha
+      confirmedAt: 2026-10-28T08:03:00.000Z
+      storageLocation: Rack A2
+      staffId: usr_staff

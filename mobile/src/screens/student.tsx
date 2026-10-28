@@ -1,12 +1,13 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View } from 'react-native';
 import type { Schema } from '../api/service';
-import { useAction, useResource, useRuntime } from '../runtime';
+import { retryKey, useAction, useResource, useRuntime } from '../runtime';
 import { Body, Button, Card, Choice, Empty, Feedback, Field, Heading, Muted, Notice, Page, ResourceState, Tag, date, styles } from '../ui';
 
-export const platforms = ['AMAZON', 'FLIPKART', 'MYNTRA', 'OTHER'] as const;
-export const carriers = ['DELHIVERY', 'BLUEDART', 'EKART', 'OTHER'] as const;
+import { PLATFORMS, CARRIERS } from '../api/identifiers';
+export const platforms = PLATFORMS;
+export const carriers = CARRIERS;
 export function StudentHome() {
   const { api, session } = useRuntime(); const router = useRouter();
   const resource = useResource(async () => ({ orders: await api.listOrders({ limit: 100 }), parcels: await api.listParcels({ limit: 100 }), inbox: await api.listNotifications({ limit: 100 }) }));
@@ -19,14 +20,15 @@ export function StudentHome() {
 }
 export function RegisterScreen() {
   const { api, session } = useRuntime(); const router = useRouter(); const action = useAction();
-  const [platform, setPlatform] = useState<Schema<'Platform'>>('AMAZON'); const [orderId, setOrderId] = useState(''); const [carrier, setCarrier] = useState('DELHIVERY'); const [tracking, setTracking] = useState(''); const [help, setHelp] = useState<Schema<'Guide'>>();
+  const registrationKey = useRef(retryKey());
+  const [platform, setPlatform] = useState<Schema<'Platform'>>('AMAZON'); const [orderId, setOrderId] = useState(''); const [carrier, setCarrier] = useState<Schema<'Carrier'>>('DELHIVERY'); const [tracking, setTracking] = useState(''); const [help, setHelp] = useState<Schema<'Guide'>>();
   if (!session) return <Redirect href="/" />;
   if (session.profile.role !== 'STUDENT') return <Redirect href="/staff" />;
   return <Page title="Register an order" subtitle="Start with the purchase, not the shipping label." back={() => router.back()}>
     <Card><Choice label="Shopping platform" values={platforms} value={platform} onChange={value => { setPlatform(value); setHelp(undefined); }} /><Field label="Merchant order ID" value={orderId} onChangeText={setOrderId} autoCapitalize="characters" placeholder="e.g. AMZ-DEMO-1001" maxLength={100} hint="This is the merchant’s order reference, not the courier tracking/AWB number." /><Button label="Where do I find my order ID?" variant="quiet" busy={action.busy} onPress={() => action.run(async () => setHelp(await api.getGuide({ platform })))} />
     {help && <Notice>{help.steps.map((step, index) => `${index + 1}. ${step}`).join('\n\n')}{'\n\n'}{help.caution}</Notice>}</Card>
     <Card><Heading>Tracking reference · optional</Heading><Choice label="Carrier namespace" values={carriers} value={carrier} onChange={setCarrier} /><Field label="Tracking / AWB number" value={tracking} onChangeText={setTracking} maxLength={100} autoCapitalize="characters" hint="You can add this later. Select the carrier printed on the label. OTHER tracking references require staff review." /></Card>
-    <Feedback error={action.error} /><Button label="Create expected order" busy={action.busy} onPress={() => action.run(async () => { const result = await api.createOrder({ platform, merchantOrderId: orderId, tracking: tracking.trim() ? [{ kind: 'TRACKING', namespace: carrier, value: tracking.trim() }] : [] }); router.replace(`/order/${result.id}`); })} />
+    <Feedback error={action.error} /><Button label="Create expected order" busy={action.busy} onPress={() => action.run(async () => { const result = await api.createOrder({ idempotencyKey: registrationKey.current, platform, merchantOrderId: orderId, tracking: tracking.trim() ? [{ kind: 'TRACKING', namespace: carrier, value: tracking.trim() }] : [] }); router.replace(`/order/${result.id}`); })} />
   </Page>;
 }
 export function OrdersScreen() {
@@ -38,7 +40,7 @@ export function OrdersScreen() {
 }
 export function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(); const { api, session } = useRuntime(); const router = useRouter(); const action = useAction();
-  const [carrier, setCarrier] = useState('DELHIVERY'); const [tracking, setTracking] = useState('');
+  const [carrier, setCarrier] = useState<Schema<'Carrier'>>('DELHIVERY'); const [tracking, setTracking] = useState('');
   const resource = useResource(async () => { const order = await api.getOrder({ orderId: id }); return { order, parcels: await Promise.all(order.parcelIds.map(parcelId => api.getParcel({ parcelId }))) }; }, id);
   if (!session) return <Redirect href="/" />;
   return <Page title="Order details" back={() => router.back()}><ResourceState {...resource} />{resource.data && !resource.error && <>

@@ -4,13 +4,16 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AppState } from 'react-native';
 import { createMockKernel } from './api/mock';
 import { ServiceError, type MailroomService, type Schema } from './api/service';
+import { ConfirmationRecoveryStore } from './confirmationRecovery';
 
 const kernel = createMockKernel(AsyncStorage);
 const api = kernel.client();
+const recovery = new ConfirmationRecoveryStore(AsyncStorage);
 type Runtime = {
   api: MailroomService; session: Schema<'Session'> | null;
   setSession: (session: Schema<'Session'> | null) => void;
   online: boolean; toggleOnline: () => void; handleError: (error: unknown) => string; sessionNotice: string;
+  recovery: ConfirmationRecoveryStore; loseNextConfirmationResponse: () => void;
 };
 const Context = createContext<Runtime | null>(null);
 export function RuntimeProvider({ children }: { children: React.ReactNode }) {
@@ -32,7 +35,7 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') expire(); });
     return () => { clearTimeout(timer); subscription.remove(); };
   }, [session, router]);
-  return <Context.Provider value={{ api, session, setSession: value => { setSession(value); if (value) setSessionNotice(''); }, sessionNotice, online, toggleOnline: () => { const value = !kernel.isOnline(); kernel.setOnline(value); setOnline(value); }, handleError }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ api, recovery, loseNextConfirmationResponse: kernel.loseNextConfirmationResponse, session, setSession: value => { setSession(value); if (value) setSessionNotice(''); }, sessionNotice, online, toggleOnline: () => { const value = !kernel.isOnline(); kernel.setOnline(value); setOnline(value); }, handleError }}>{children}</Context.Provider>;
 }
 export const useRuntime = () => { const value = useContext(Context); if (!value) throw new Error('Runtime missing'); return value; };
 

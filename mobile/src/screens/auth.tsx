@@ -20,13 +20,13 @@ export function LoginScreen() {
   </Page>;
 }
 export function AccountScreen() {
-  const { session, api, setSession, online, toggleOnline } = useRuntime(); const router = useRouter(); const action = useAction(); const [reset, setReset] = useState(false);
+  const { session, api, setSession, online, toggleOnline, recovery } = useRuntime(); const router = useRouter(); const action = useAction(); const [reset, setReset] = useState(false);
   if (!session) return <Redirect href="/" />;
   return <Page title="Your demo account" subtitle="Provisioned identity · local demonstration">
     <Card><Heading>{session.profile.name}</Heading><Body>{session.profile.email}</Body>{session.profile.studentNumber && <Body>Student number: {session.profile.studentNumber}</Body>}<Muted>Role: {session.profile.role === 'STAFF' ? 'Mailroom staff' : 'Student'}</Muted><Muted>Session expires {date(session.expiresAt)}. Sign in again after expiry. Sessions and displayed credential secrets are not restored after app restart.</Muted></Card>
     <Card><Heading>Connection simulation</Heading><Muted>Exercise the network-error and retry UI without contacting a server.</Muted><Choice label="Mock transport" values={['ONLINE', 'OFFLINE'] as const} value={online ? 'ONLINE' : 'OFFLINE'} onChange={value => { if ((value === 'ONLINE') !== online) toggleOnline(); }} /></Card>
     <Feedback error={action.error} /><Button label="Log out" busy={action.busy} variant="quiet" onPress={() => action.run(async () => { await api.logout({}); setSession(null); router.replace('/'); })} />
-    {session.profile.role === 'STAFF' && <Card><Heading>Reset demo data</Heading><Muted>Deletes synthetic orders, parcels, notifications and retained receipts on this device. All demo sessions will end.</Muted><Check label="I want to erase this device’s demo history" checked={reset} onChange={setReset} /><Button label="Reset synthetic demo data" variant="danger" disabled={!reset} busy={action.busy} onPress={() => action.run(async () => { await api.resetDemo({}); setSession(null); router.replace('/'); })} /></Card>}
+    {session.profile.role === 'STAFF' && <Card><Heading>Reset demo data</Heading><Muted>Deletes synthetic orders, parcels, notifications and retained receipts on this device. All demo sessions will end.</Muted><Check label="I want to erase this device’s demo history" checked={reset} onChange={setReset} /><Button label="Reset synthetic demo data" variant="danger" disabled={!reset} busy={action.busy} onPress={() => action.run(async () => { await api.resetDemo({}); await recovery.reset(session.profile.id); setSession(null); router.replace('/'); })} /></Card>}
     <View style={styles.row}><Muted>Smart Mailroom · Frontend prototype</Muted></View>
   </Page>;
 }

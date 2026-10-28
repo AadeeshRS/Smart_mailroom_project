@@ -1,18 +1,20 @@
+import { automaticNamespace, checkedIdentifier, sameIdentifier } from './identifiers';
 import { DEMO_PASSCODE, ServiceError, type Input, type MailroomService, type Schema } from './service';
 
 type Order = Schema<'ExpectedOrder'>;
-type Parcel = Schema<'Parcel'>;
+type Parcel = Schema<'StaffParcel'>;
 type Profile = Schema<'Profile'>;
 type Credential = Schema<'Credential'>;
 type Verification = Schema<'Verification'>;
-type Receipt = Schema<'Receipt'>;
+type Receipt = Schema<'StaffReceipt'>;
 type Identifier = Schema<'Identifier'>;
 type ConfirmationRecord = { actor: string; key: string; fingerprint: string; receipt: Receipt };
-type IssueRecord = { actor: string; key: string; fingerprint: string; credentialId: string };
+type IssueRecord = { actor: string; key: string; fingerprint: string; credentialId: string; expiresAt: number };
+type WriteRecord = { actor: string; operation: string; key: string; fingerprint: string; expiresAt: number; result: unknown };
 type State = {
   version: 1; sequence: number; orders: Order[]; parcels: Parcel[];
   notifications: Schema<'Notification'>[]; receipts: Receipt[];
-  confirmations: ConfirmationRecord[]; issues: IssueRecord[]; resolvedClaims: Record<string, string>;
+  confirmations: ConfirmationRecord[]; issues: IssueRecord[]; resolvedClaims: Record<string, string>; observedClaims: Record<string, string>; writes: WriteRecord[];
 };
 export interface Persistence { getItem(key: string): Promise<string | null>; setItem(key: string, value: string): Promise<void> }
 export const STORAGE_KEY = 'smart-mailroom-demo-v1';
@@ -21,9 +23,9 @@ const profiles: Profile[] = [
   { id: 'usr_neel', name: 'Neel Shah', email: 'neel@students.example.invalid', studentNumber: 'DEMO1002', role: 'STUDENT' },
   { id: 'usr_staff', name: 'Mira Sen', email: 'mira@staff.example.invalid', role: 'STAFF' },
 ];
-const fresh = (): State => ({ version: 1, sequence: 0, orders: [], parcels: [], notifications: [], receipts: [], confirmations: [], issues: [], resolvedClaims: {} });
+const fresh = (): State => ({ version: 1, sequence: 0, orders: [], parcels: [], notifications: [], receipts: [], confirmations: [], issues: [], resolvedClaims: {}, observedClaims: {}, writes: [] });
 const normalize = (s: string) => s.trim().toUpperCase();
-const same = (a: Identifier, b: Identifier) => a.kind === b.kind && normalize(a.namespace) === normalize(b.namespace) && normalize(a.value) === normalize(b.value);
+const same = sameIdentifier;
 const references = (o: Order): Identifier[] => [{ kind: 'ORDER_ID', namespace: o.platform, value: o.merchantOrderId }, ...o.tracking];
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 function fail(code: Schema<'ErrorCode'>, message: string): never { throw new ServiceError(code, message); }
@@ -41,10 +43,12 @@ const reasonText = (text: string) => {
  * this is not server authorization, cryptography, or a database transaction implementation.
  * Credential secrets and verification references are deliberately volatile.
  */
-export function createMockKernel(storage: Persistence, now: () => number = Date.now) {
+export function createMockKernel(storage: Persistence, now: () => number = Date.now, options: { demoEnabled?: boolean } = {}) {
   let state = fresh();
   let loaded = false;
   let online = true;
+  let loseConfirmationResponse = false;
+  const snapshots = new Map<string, { ids: string[]; offset: number; scope: string; expiresAt: number }>();
   let queue: Promise<unknown> = Promise.resolve();
   const sessions = new Map<string, Schema<'Session'>>();
   const credentials = new Map<string, Credential & { attempts: number }>();
@@ -67,7 +71,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
       try {
         const parsed = JSON.parse(value) as State;
         if (parsed.version !== 1 || !Array.isArray(parsed.orders) || !Array.isArray(parsed.parcels) || !Array.isArray(parsed.receipts) || !Array.isArray(parsed.notifications) || !Array.isArray(parsed.confirmations) || !Array.isArray(parsed.issues)) throw new Error('Unsupported demo data');
-        state = { ...parsed, resolvedClaims: parsed.resolvedClaims ?? {} };
+        state = { ...parsed, resolvedClaims: parsed.resolvedClaims ?? {}, observedClaims: parsed.observedClaims ?? {}, writes: parsed.writes ?? [] };
         for (const p of state.parcels) if (p.credentialState === 'ACTIVE') p.credentialState = 'INVALIDATED';
       } catch { throw new ServiceError('PERSISTENCE', 'Saved demo data cannot be read. Clear this app’s local storage to reset.', false); }
     }
@@ -88,6 +92,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         state = before;
         // Fail closed when a write is uncertain; no outstanding secret can authorize a handover.
         credentials.clear(); verifications.clear();
+        for (const p of state.parcels) if (p.credentialState === 'ACTIVE') p.credentialState = 'INVALIDATED';
         throw new ServiceError('PERSISTENCE', 'Could not save the demo change. Retry; collection secrets have been cleared.', true);
       }
       if (operationError) throw operationError;
@@ -95,6 +100,22 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     });
     queue = work.catch(() => undefined);
     return work;
+  }
+  const canonical = (value: unknown): string => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+  function write<T>(actor: string, operation: string, request: { idempotencyKey: string }, action: () => T): T {
+    const key = requiredText(request.idempotencyKey, 'Idempotency key');
+    if (key.length < 8) fail('VALIDATION', 'Idempotency key must have at least 8 characters.');
+    const { idempotencyKey: _key, ...body } = request;
+    const fingerprint = canonical(body);
+    state.writes = state.writes.filter(record => record.expiresAt > now());
+    const previous = state.writes.find(record => record.actor === actor && record.operation === operation && record.key === key);
+    if (previous) {
+      if (previous.fingerprint !== fingerprint) fail('IDEMPOTENCY_CONFLICT', 'This retry key belongs to different request details.');
+      return clone(previous.result) as T;
+    }
+    const result = action();
+    state.writes.push({ actor, operation, key, fingerprint, expiresAt: now() + 86_400_000, result: clone(result) });
+    return result;
   }
   const candidate = (p: Parcel, order: Order): Schema<'Candidate'> => {
     const student = profile(order.studentId);
@@ -112,8 +133,11 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     return { order, student, comparable, corroborated, conflicts };
   };
   const notify = (p: Parcel, title: string, message: string, studentId = p.studentId) => {
-    if (studentId) state.notifications.unshift({ id: next('ntf'), studentId, parcelId: p.id, title, message, createdAt: iso(), inAppAvailable: true, simulatedExternal: true, externalDelivery: 'ACCEPTED' });
+    if (studentId) state.notifications.unshift({ id: next('ntf'), studentId, parcelId: p.id, title, message: /review|paused/i.test(title) ? 'Mailroom review updated this parcel. Contact staff for assistance; internal evidence remains private.' : message, createdAt: iso(), inAppAvailable: true, simulatedExternal: true, externalDelivery: 'ACCEPTED' });
   };
+  // Apply the privacy boundary on reads too: older persisted demo notifications
+  // may predate the restriction on exposing internal review reasons.
+  const publicNotification = (n: Schema<'Notification'>): Schema<'Notification'> => ({ ...n, message: /review|paused/i.test(n.title) ? 'Mailroom review updated this parcel. Contact staff for assistance; internal evidence remains private.' : n.message });
   const updateOrders = () => {
     const active = state.orders.filter(o => o.status !== 'CANCELLED');
     for (const o of state.orders) {
@@ -132,22 +156,26 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     if (previousStudent !== o.studentId) notify(p, 'Your parcel has arrived', `${p.description} is stored at ${p.storageLocation}. Request a collection code when ready.`);
     updateOrders();
   };
+  const collisionPeers = (p: Parcel) => state.parcels.filter(other => other.id !== p.id && p.identifiers.some(a => a.kind === 'TRACKING' && other.identifiers.some(b => b.kind === 'TRACKING' && same(a, b))));
   const claimsFingerprint = (p: Parcel) => {
     const linked = state.orders.find(o => o.id === p.orderId);
     const related = [...p.identifiers, ...(linked ? references(linked) : [])];
-    return JSON.stringify(state.orders.filter(o => o.status !== 'CANCELLED' && (o.id === p.orderId || references(o).some(a => related.some(b => same(a, b))))).map(o => ({ id: o.id, tracking: o.tracking, merchantOrderId: o.merchantOrderId, duplicateClaim: o.duplicateClaim })));
+    return JSON.stringify([collisionPeers(p).map(other => ({ id: other.id, identifiers: other.identifiers })).sort((a, b) => a.id.localeCompare(b.id)), state.orders.filter(o => o.status !== 'CANCELLED' && (o.id === p.orderId || references(o).some(a => related.some(b => same(a, b))))).map(o => ({ id: o.id, tracking: o.tracking, merchantOrderId: o.merchantOrderId, duplicateClaim: o.duplicateClaim }))]);
   };
   const evaluate = (p: Parcel, actor: string) => {
     if (p.status === 'CLOSED') return;
-    if (p.orderId && state.resolvedClaims[p.id] === claimsFingerprint(p)) return;
+    const evidenceFingerprint = claimsFingerprint(p);
+    if (p.orderId && state.resolvedClaims[p.id] === evidenceFingerprint) return;
+    if (p.orderId && p.hold === 'DISPUTE' && state.observedClaims[p.id] === evidenceFingerprint) return;
     const candidates = state.orders.filter(o => o.status !== 'CANCELLED').map(o => candidate(p, o)).filter(c => c.comparable);
     let outcome: Schema<'MatchOutcome'>; let explanation: string;
     const c = candidates[0];
-    if (candidates.length > 1 || candidates.some(c => c.order.duplicateClaim)) { outcome = 'AMBIGUOUS'; explanation = 'Overlapping claims require staff evidence review. No first-claim allocation.'; }
+    if (collisionPeers(p).length) { outcome = 'TRACKING_COLLISION'; explanation = 'A normalized carrier/tracking reference appears on multiple physical parcels. Document a resolution for each affected parcel.'; }
+    else if (candidates.length > 1 || candidates.some(c => c.order.duplicateClaim)) { outcome = 'AMBIGUOUS'; explanation = 'Overlapping claims require staff evidence review. No first-claim allocation.'; }
     else if (!c) { outcome = 'NO_MATCH'; explanation = 'No registered reference matches the same identifier type and namespace.'; }
     else if (c.conflicts.length) { outcome = 'CONFLICT'; explanation = c.conflicts.join(' '); }
     else if (p.orderId && p.orderId !== c.order.id) { outcome = 'CONFLICT'; explanation = 'A new matching request contradicts the reviewed assignment. Staff must resolve ownership before collection.'; }
-    else if (!c.corroborated || c.order.platform === 'OTHER' || !p.identifiers.some(id => normalize(id.namespace) !== 'OTHER' && references(c.order).some(r => same(id, r)))) { outcome = 'INSUFFICIENT_EVIDENCE'; explanation = 'Independent profile corroboration or a comparable identifier in a known platform/carrier namespace is missing. OTHER requires staff review.'; }
+    else if (!c.corroborated || c.order.platform === 'OTHER' || !p.identifiers.some(id => automaticNamespace(id) && references(c.order).some(r => same(id, r)))) { outcome = 'INSUFFICIENT_EVIDENCE'; explanation = 'Independent profile corroboration or a comparable identifier in a known platform/carrier namespace is missing. OTHER requires staff review.'; }
     else {
       // A staff-imposed hold cannot be silently removed by a later order registration.
       if (!p.orderId) link(p, c.order, actor, 'Unique comparable identifier with independent profile corroboration and no contradictory evidence.');
@@ -155,10 +183,11 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     }
     p.matchOutcome = outcome; p.matchExplanation = explanation;
     if (p.orderId) {
+      state.observedClaims[p.id] = evidenceFingerprint;
       revoke(p); p.hold = 'DISPUTE'; p.holdReason = explanation; p.revision++;
       audit(p, actor, 'DISPUTE_HOLD', explanation);
       notify(p, 'Collection paused for review', explanation);
-    } else { p.status = 'AWAITING_MATCH'; }
+    } else { p.status = 'AWAITING_MATCH'; if (outcome === 'TRACKING_COLLISION') { p.hold = 'REVIEW'; p.holdReason = explanation; } }
   };
   const recheck = (actor: string) => { updateOrders(); for (const p of state.parcels) evaluate(p, actor); updateOrders(); };
   const presented = (p: Parcel): Parcel => {
@@ -166,17 +195,39 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     if (c && now() >= Date.parse(c.expiresAt) && p.credentialState === 'ACTIVE') p.credentialState = 'EXPIRED';
     return { ...p, collectionEligible: eligible(p) };
   };
-  const page = <T,>(items: T[], query: { cursor?: string; limit?: number }, search: (x: T) => boolean = () => true) => {
-    if (query.cursor !== undefined && !/^\d+$/.test(query.cursor)) fail('VALIDATION', 'Invalid pagination cursor.');
-    const offset = Number(query.cursor ?? '0'); const limit = query.limit ?? 20;
-    if (!Number.isSafeInteger(offset) || !Number.isInteger(limit) || limit < 1 || limit > 100) fail('VALIDATION', 'Invalid page size or cursor.');
-    const values = items.filter(search); const result = { items: values.slice(offset, offset + limit) };
-    return offset + limit < values.length ? { ...result, nextCursor: String(offset + limit) } : result;
+  const publicParcel = (record: Parcel): Schema<'Parcel'> => {
+    const p = presented(record);
+    return { id: p.id, description: p.description, storageLocation: p.storageLocation, physicalReference: p.physicalReference,
+      status: p.status, receivedAt: p.receivedAt, ...(p.orderId ? { orderId: p.orderId } : {}), ...(p.studentId ? { studentId: p.studentId } : {}),
+      revision: p.revision, matchOutcome: p.matchOutcome, matchExplanation: p.status === 'CLOSED' ? 'Collected; retained receipt available.' : p.hold !== 'NONE' ? 'Mailroom review is required before collection.' : p.collectionEligible ? 'Matched parcel is ready for collection.' : 'Awaiting mailroom matching review.',
+      hold: p.hold, holdReason: p.hold === 'NONE' ? '' : 'Collection is paused pending mailroom review.', collectionEligible: p.collectionEligible,
+      credentialState: p.credentialState, ...(p.receiptId ? { receiptId: p.receiptId } : {}) };
   };
-  const validIdentifier = (id: Identifier, trackingOnly = false): Identifier => {
-    if (!['ORDER_ID', 'TRACKING'].includes(id.kind) || (trackingOnly && id.kind !== 'TRACKING')) fail('VALIDATION', 'Classify each identifier as merchant order ID or carrier tracking/AWB.');
-    return { kind: id.kind, namespace: normalize(requiredText(id.namespace, 'Identifier namespace', 40)), value: requiredText(id.value, 'Identifier value') };
+  const publicReceipt = (r: Receipt): Schema<'Receipt'> => ({ id: r.id, parcelId: r.parcelId, orderId: r.orderId, studentId: r.studentId, confirmedAt: r.confirmedAt, storageLocation: r.storageLocation });
+  const timestamp = (item: { createdAt?: string; receivedAt?: string; confirmedAt?: string }) => item.createdAt ?? item.receivedAt ?? item.confirmedAt ?? '';
+  const page = <T extends { id: string; createdAt?: string; receivedAt?: string; confirmedAt?: string },>(items: T[], query: { cursor?: string; limit?: number; q?: string; status?: string; hold?: string }, scope: string, search: (x: T) => boolean = () => true, preserveOrder = false) => {
+    for (const [key, snapshot] of snapshots) if (snapshot.expiresAt <= now()) snapshots.delete(key);
+    const limit = query.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (query.q?.length ?? 0) > 100) fail('VALIDATION', 'Invalid page size or search length.');
+    const binding = scope + canonical({ limit, q: query.q ?? '', status: query.status ?? '', hold: query.hold ?? '' });
+    let snapshot;
+    if (query.cursor !== undefined) {
+      snapshot = snapshots.get(query.cursor);
+      if (!snapshot || snapshot.scope !== binding || snapshot.expiresAt <= now()) fail('CURSOR_INVALID', 'Cursor expired or belongs to another account/query. Load the first page.');
+    } else {
+      const values = items.filter(search);
+      if (!preserveOrder) values.sort((a, b) => timestamp(b).localeCompare(timestamp(a)) || b.id.localeCompare(a.id));
+      snapshot = { ids: values.map(item => item.id), offset: 0, scope: binding, expiresAt: now() + 900_000 };
+    }
+    const current = new Map(items.map(item => [item.id, item]));
+    const result: T[] = []; let offset = snapshot.offset;
+    while (offset < snapshot.ids.length && result.length < limit) { const item = current.get(snapshot.ids[offset++]); if (item) result.push(item); }
+    if (offset < snapshot.ids.length) { const cursor = next('cursor'); snapshots.set(cursor, { ...snapshot, offset }); return { items: result, nextCursor: cursor }; }
+    return { items: result };
   };
+  const validIdentifier = checkedIdentifier;
+  const arrayBound = (input: unknown, label: string) => { if (!Array.isArray(input) || input.length > 20) fail('VALIDATION', label + ' must be an array of at most 20 references.'); };
+  const recipient = (value: string, label: string, maximum: number) => { if (typeof value !== 'string' || value.length > maximum) fail('VALIDATION', label + ' exceeds its field limit.'); return value.trim(); };
 
   function client(): MailroomService {
     let token = '';
@@ -197,7 +248,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     };
     const collection = (p: Parcel) => {
       if (p.status === 'CLOSED') fail('ALREADY_COLLECTED', 'This parcel has already been collected. View its retained receipt.');
-      if (p.hold !== 'NONE') fail('COLLECTION_HOLD', `Collection paused: ${p.holdReason}`);
+      if (p.hold !== 'NONE') fail('COLLECTION_HOLD', 'Collection is paused pending mailroom review.');
       if (!eligible(p)) fail('NOT_ELIGIBLE', 'Parcel must be assigned and awaiting collection.');
     };
     const current = (p: Parcel) => {
@@ -211,6 +262,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
     const checkRevision = (p: Parcel, revision: number) => { if (p.revision !== revision) fail('REVISION_CHANGED', 'Parcel changed. Reload the latest details and review again.'); };
     const api: MailroomService = {
       login: input => run(() => {
+        if (options.demoEnabled === false) fail('DEMO_DISABLED', 'Demo authentication is unavailable in this environment.');
         const p = profiles.find(p => p.id === input.accountId);
         if (!p || input.passcode !== DEMO_PASSCODE) fail('UNAUTHENTICATED', 'Invalid demonstration account or passcode.');
         if (token) sessions.delete(token);
@@ -229,19 +281,23 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         if (!steps[input.platform]) fail('VALIDATION', 'Choose a supported shopping platform.');
         return { platform: input.platform, title: `Find your ${input.platform.toLowerCase()} order ID`, steps: steps[input.platform], caution: 'Guidance is illustrative; merchant menus may change. No shopping account is connected. An order ID does not verify ownership.' };
       }),
-      listOrders: query => run(() => { const s = session('STUDENT'); return page(state.orders.filter(o => o.studentId === s.profile.id), query, o => (!query.status || o.status === query.status) && (!query.q || normalize(`${o.merchantOrderId} ${o.tracking.map(r => r.value).join(' ')}`).includes(normalize(query.q)))); }),
+      listOrders: query => run(() => { const s = session('STUDENT'); return page(state.orders.filter(o => o.studentId === s.profile.id), query, 'orders:' + s.profile.id, o => (!query.status || o.status === query.status) && (!query.q || normalize(`${o.merchantOrderId} ${o.tracking.map(r => r.value).join(' ')}`).includes(normalize(query.q)))); }),
       createOrder: input => run(() => {
         const s = session('STUDENT');
+        return write(s.profile.id, 'createOrder', input, () => {
+        arrayBound(input.tracking, 'Tracking');
         if (!['AMAZON', 'FLIPKART', 'MYNTRA', 'OTHER'].includes(input.platform)) fail('VALIDATION', 'Choose a shopping platform.');
-        const merchantOrderId = requiredText(input.merchantOrderId, 'Merchant order ID');
-        if (state.orders.some(o => o.studentId === s.profile.id && o.status !== 'CANCELLED' && o.platform === input.platform && normalize(o.merchantOrderId) === normalize(merchantOrderId))) fail('DUPLICATE_ORDER', 'You already registered this active order. Add tracking to the existing request.');
+        const merchantOrderId = checkedIdentifier({ kind: 'ORDER_ID', namespace: input.platform, value: requiredText(input.merchantOrderId, 'Merchant order ID') }).value;
+        if (state.orders.some(o => o.studentId === s.profile.id && o.status !== 'CANCELLED' && o.platform === input.platform && o.merchantOrderId === merchantOrderId)) fail('DUPLICATE_ORDER', 'You already registered this active order. Add tracking to the existing request.');
         const tracking = input.tracking.map(r => validIdentifier(r, true) as Schema<'TrackingReference'>);
         const order: Order = { id: next('ord'), studentId: s.profile.id, platform: input.platform, merchantOrderId, tracking, status: 'PENDING', createdAt: iso(), parcelIds: [], duplicateClaim: false };
         state.orders.unshift(order); recheck(s.profile.id); return order;
+        });
       }),
       getOrder: input => run(() => ownedOrder(input.orderId)),
       addTracking: input => run(() => {
         const o = ownedOrder(input.orderId);
+        if (o.tracking.length >= 20 && !o.tracking.some(r => same(r, input.reference))) fail('VALIDATION', 'At most 20 tracking references are allowed.');
         if (o.status === 'CANCELLED') fail('CANCELLATION_INELIGIBLE', 'Cancelled orders cannot be edited.');
         const reference = validIdentifier(input.reference, true) as Schema<'TrackingReference'>;
         if (!o.tracking.some(r => same(r, reference))) o.tracking.push(reference);
@@ -249,31 +305,41 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
       }),
       cancelOrder: input => run(() => {
         const o = ownedOrder(input.orderId);
+        if (o.status === 'CANCELLED') return o;
         if (o.status !== 'PENDING' || o.parcelIds.length) fail('CANCELLATION_INELIGIBLE', 'Only pending orders without linked parcels can be cancelled.');
         o.status = 'CANCELLED'; updateOrders(); return o;
       }),
       listParcels: query => run(() => {
         const s = session();
-        return page(state.parcels.filter(p => s.profile.role === 'STAFF' || p.studentId === s.profile.id).map(presented), query,
-          p => (!query.status || p.status === query.status) && (!query.hold || p.hold === query.hold) && (!query.q || normalize(`${p.id} ${p.description} ${p.storageLocation} ${p.physicalReference} ${p.identifiers.map(i => i.value).join(' ')}`).includes(normalize(query.q))));
+        return page(state.parcels.filter(p => s.profile.role === 'STAFF' || p.studentId === s.profile.id).map(publicParcel), query, 'parcels:' + s.profile.id,
+          p => (!query.status || p.status === query.status) && (!query.hold || p.hold === query.hold) && (!query.q || normalize(`${p.id} ${p.description} ${p.storageLocation} ${p.physicalReference} ${s.profile.role === 'STAFF' ? state.parcels.find(record => record.id === p.id)?.identifiers.map(i => i.value).join(' ') ?? '' : ''}`).includes(normalize(query.q))));
       }),
       intakeParcel: input => run(() => {
         const s = session('STAFF');
+        return write(s.profile.id, 'intakeParcel', input, () => {
+        arrayBound(input.identifiers, 'Label identifiers');
         if (!input.labelReviewed) fail('VALIDATION', 'Review and classify label values before saving intake.');
         const physicalReference = requiredText(input.physicalReference, 'Physical parcel reference', 80);
         if (state.parcels.some(p => normalize(p.physicalReference) === normalize(physicalReference))) fail('DUPLICATE_INTAKE', 'That physical parcel reference already exists. Review the retained intake record; split shipments need distinct physical references.');
         if (!['MANUAL', 'CAMERA'].includes(input.source)) fail('VALIDATION', 'Invalid intake source.');
-        const p: Parcel = { id: next('par'), identifiers: input.identifiers.map(i => validIdentifier(i)), description: requiredText(input.description, 'Parcel description', 160), storageLocation: requiredText(input.storageLocation, 'Storage location', 80), physicalReference, recipientEmail: input.recipientEmail.trim(), recipientStudentNumber: input.recipientStudentNumber.trim(), recipientName: input.recipientName.trim(), source: input.source, status: 'RECEIVED', receivedAt: iso(), revision: 1, matchOutcome: 'NO_MATCH', matchExplanation: '', hold: 'NONE', holdReason: '', collectionEligible: false, credentialState: 'NONE', audit: [] };
+        const p: Parcel = { id: next('par'), identifiers: input.identifiers.map(i => validIdentifier(i)), description: requiredText(input.description, 'Parcel description', 160), storageLocation: requiredText(input.storageLocation, 'Storage location', 80), physicalReference, recipientEmail: recipient(input.recipientEmail, 'Recipient email', 254), recipientStudentNumber: recipient(input.recipientStudentNumber, 'Student number', 40), recipientName: recipient(input.recipientName, 'Recipient name', 120), source: input.source, status: 'RECEIVED', receivedAt: iso(), revision: 1, matchOutcome: 'NO_MATCH', matchExplanation: '', hold: 'NONE', holdReason: '', collectionEligible: false, credentialState: 'NONE', audit: [] };
         audit(p, s.profile.id, 'RECEIVED', `Physical intake saved at ${p.storageLocation}; label fields reviewed.`);
-        state.parcels.unshift(p); evaluate(p, s.profile.id); updateOrders(); return presented(p);
+        state.parcels.unshift(p); recheck(s.profile.id); return presented(p);
+        });
       }),
-      getParcel: input => run(() => presented(ownedParcel(input.parcelId))),
+      getParcel: input => run(() => publicParcel(ownedParcel(input.parcelId))),
+      getStaffParcel: input => run(() => { session('STAFF'); return presented(ownedParcel(input.parcelId)); }),
       getReview: input => run(() => {
-        session('STAFF'); const p = ownedParcel(input.parcelId);
-        return { parcel: presented(p), candidates: state.orders.filter(o => o.status !== 'CANCELLED').map(o => candidate(p, o)).sort((a, b) => Number(b.comparable) - Number(a.comparable)) };
+        const s = session('STAFF'); const p = ownedParcel(input.parcelId);
+        if ((input.limit ?? 20) > 50) fail('VALIDATION', 'Candidate pages contain at most 50 requests.');
+        const candidates = state.orders.filter(o => o.status !== 'CANCELLED').sort((a, b) => Number(candidate(p, b).comparable) - Number(candidate(p, a).comparable) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+        const result = page(candidates, input, 'review:' + s.profile.id + ':' + p.id, o => { const student = profile(o.studentId); return !input.q || normalize(`${o.merchantOrderId} ${o.tracking.map(r => r.value).join(' ')} ${student.name} ${student.email} ${student.studentNumber ?? ''}`).includes(normalize(input.q)); }, true);
+        return { parcel: presented(p), candidates: result.items.map(o => candidate(p, o)), ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}) };
       }),
       reconcileParcel: input => run(() => {
-        const s = session('STAFF'); const p = ownedParcel(input.parcelId); checkRevision(p, input.expectedRevision);
+        const s = session('STAFF');
+        return write(s.profile.id, 'reconcileParcel', input, () => {
+        const p = ownedParcel(input.parcelId); checkRevision(p, input.expectedRevision);
         if (p.status === 'CLOSED') fail('ALREADY_COLLECTED', 'Collected parcels cannot be reassigned. Retain the receipt and investigate separately.');
         if (!input.identifierReviewed || !input.recipientVerified || !input.conflictsResolved) fail('VALIDATION', 'Complete every evidence check before resolving this parcel.');
         const reason = reasonText(input.reason);
@@ -282,6 +348,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         state.resolvedClaims[p.id] = claimsFingerprint(p);
         audit(p, s.profile.id, 'EVIDENCE_REVIEWED', `Identifier reviewed; recipient verified; competing claims resolved. ${reason}`);
         return presented(p);
+        });
       }),
       setHold: input => run(() => {
         const s = session('STAFF'); const p = ownedParcel(input.parcelId); checkRevision(p, input.expectedRevision);
@@ -295,6 +362,7 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         const s = session('STUDENT'); const p = ownedParcel(input.parcelId); collection(p);
         const key = requiredText(input.idempotencyKey, 'Issuance retry key'); if (key.length < 8) fail('VALIDATION', 'Retry key must be at least 8 characters.');
         const fingerprint = JSON.stringify({ parcelId: p.id, replace: input.replace });
+        state.issues = state.issues.filter(i => i.expiresAt > now());
         const prior = state.issues.find(i => i.actor === s.profile.id && i.key === key);
         if (prior) {
           if (prior.fingerprint !== fingerprint) fail('IDEMPOTENCY_CONFLICT', 'Issuance retry key was used with a different request.');
@@ -306,15 +374,20 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         }
         const active = credentials.get(p.id);
         if (active && p.credentialState === 'ACTIVE' && now() < Date.parse(active.expiresAt) && !input.replace) fail('CREDENTIAL_ACTIVE', 'A current code exists. Choose Replace code to invalidate it.');
+        if (p.credentialState !== 'NONE' && !input.replace) fail('CREDENTIAL_INVALIDATED', 'Explicitly request a replacement with replace=true and a new issuance key.');
         revoke(p); const id = next('crd');
         // Synthetic, predictable demo values only. Backend must use cryptographic generation.
         const otp = String(100000 + (state.sequence * 7919) % 900000);
         const credential: Credential = { id, parcelId: p.id, otp, qr: { v: 1, credentialRef: id, token: `demo-opaque-token-${state.sequence}-v1` }, issuedAt: iso(), expiresAt: iso(now() + 10 * 60_000) };
         credentials.set(p.id, { ...credential, attempts: 0 }); p.credentialState = 'ACTIVE';
-        state.issues.push({ actor: s.profile.id, key, fingerprint, credentialId: id }); issueSessions.set(`${s.profile.id}:${key}`, token); return credential;
+        state.issues.push({ actor: s.profile.id, key, fingerprint, credentialId: id, expiresAt: now() + 86_400_000 }); issueSessions.set(`${s.profile.id}:${key}`, token); return credential;
       }),
       verifyCredential: input => run(() => {
-        const s = session('STAFF'); const p = ownedParcel(input.parcelId); collection(p); const c = current(p);
+        const s = session('STAFF');
+        const fields = Object.keys(input);
+        const allowed = input.method === 'OTP' ? ['parcelId', 'method', 'otp'] : ['parcelId', 'method', 'qr'];
+        if (!['OTP', 'QR'].includes(input.method) || fields.some(field => !allowed.includes(field)) || input.method === 'OTP' && (!('otp' in input) || typeof input.otp !== 'string' || !/^\d{6}$/.test(input.otp)) || input.method === 'QR' && (!('qr' in input) || !input.qr || Object.keys(input.qr).sort().join(',') !== 'credentialRef,token,v' || input.qr.v !== 1 || typeof input.qr.credentialRef !== 'string' || !/^crd_[A-Za-z0-9_-]+$/.test(input.qr.credentialRef) || typeof input.qr.token !== 'string' || input.qr.token.length < 16 || input.qr.token.length > 256)) fail('VALIDATION', 'Supply exactly one credential presentation: OTP with otp, or QR with qr.');
+        const p = ownedParcel(input.parcelId); collection(p); const c = current(p);
         if (input.method === 'OTP') {
           if (!input.otp || !/^\d{6}$/.test(input.otp)) fail('VALIDATION', 'Enter a six-digit OTP for this parcel.');
           if (input.otp !== c.otp) {
@@ -351,21 +424,25 @@ export function createMockKernel(storage: Persistence, now: () => number = Date.
         audit(p, s.profile.id, 'HANDOVER_CONFIRMED', `Physical handover explicitly confirmed; receipt ${receipt.id}.`);
         notify(p, 'Parcel collected', `Your parcel ${p.id} was collected. Receipt ${receipt.id} is retained in history.`);
         return { receipt, replayed: false };
+      }).then(result => {
+        if (loseConfirmationResponse) { loseConfirmationResponse = false; throw new ServiceError('NETWORK', 'Simulated response lost after the confirmation was saved. Outcome is uncertain to this screen; retry the original request.', true); }
+        return result;
       }),
-      listNotifications: query => run(() => { const s = session('STUDENT'); return page(state.notifications.filter(n => n.studentId === s.profile.id), query, n => !query.q || normalize(`${n.title} ${n.message}`).includes(normalize(query.q))); }),
+      listNotifications: query => run(() => { const s = session('STUDENT'); return page(state.notifications.filter(n => n.studentId === s.profile.id).map(publicNotification), query, 'notifications:' + s.profile.id, n => !query.q || normalize(`${n.title} ${n.message}`).includes(normalize(query.q))); }),
       readNotification: input => run(() => {
         const s = session('STUDENT'); const n = state.notifications.find(n => n.id === input.notificationId && n.studentId === s.profile.id) ?? fail('NOT_FOUND', 'Notification not found.');
-        n.readAt ??= iso(); return n;
+        n.readAt ??= iso(); return publicNotification(n);
       }),
-      listReceipts: query => run(() => { const s = session(); return page(state.receipts.filter(r => s.profile.role === 'STAFF' || r.studentId === s.profile.id), query, r => !query.q || normalize(`${r.id} ${r.parcelId} ${r.orderId}`).includes(normalize(query.q))); }),
+      listReceipts: query => run(() => { const s = session(); return page(state.receipts.filter(r => s.profile.role === 'STAFF' || r.studentId === s.profile.id).map(publicReceipt), query, 'receipts:' + s.profile.id, r => !query.q || normalize(`${r.id} ${r.parcelId} ${r.orderId}`).includes(normalize(query.q))); }),
       getReceipt: input => run(() => {
-        const s = session(); return state.receipts.find(r => r.id === input.receiptId && (s.profile.role === 'STAFF' || r.studentId === s.profile.id)) ?? fail('NOT_FOUND', 'Receipt not found.');
+        const s = session(); const r = state.receipts.find(r => r.id === input.receiptId && (s.profile.role === 'STAFF' || r.studentId === s.profile.id)) ?? fail('NOT_FOUND', 'Receipt not found.'); return publicReceipt(r);
       }),
-      resetDemo: () => run(() => { session('STAFF'); state = fresh(); credentials.clear(); verifications.clear(); issueSessions.clear(); sessions.clear(); token = ''; return { ok: true }; }),
+      getStaffReceipt: input => run(() => { session('STAFF'); return state.receipts.find(r => r.id === input.receiptId) ?? fail('NOT_FOUND', 'Receipt not found.'); }),
+      resetDemo: () => run(() => { if (options.demoEnabled === false) fail('DEMO_DISABLED', 'Demo reset is unavailable in this environment.'); session('STAFF'); state = fresh(); credentials.clear(); verifications.clear(); issueSessions.clear(); snapshots.clear(); loseConfirmationResponse = false; sessions.clear(); token = ''; return { ok: true }; }),
     };
     return api;
   }
-  return { client, setOnline: (value: boolean) => { online = value; }, isOnline: () => online };
+  return { client, setOnline: (value: boolean) => { online = value; }, isOnline: () => online, loseNextConfirmationResponse: () => { loseConfirmationResponse = true; } };
 }
 
 // Input is generated from OpenAPI; this compile-time export helps later adapters/tests reuse it.
