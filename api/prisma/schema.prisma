@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  studentNumber String? @unique
+  role String
+  passwordHash String
+  synthetic Boolean @default(true)
+  sessions Session[]
+  orders ExpectedOrder[]
+  parcels Parcel[]
+  notifications Notification[]
+  handovers Handover[] @relation("StudentHandovers")
+  staffHandovers Handover[] @relation("StaffHandovers")
+  decisions Decision[]
+  audits AuditEvent[]
+  idempotency Idempotency[]
+  snapshots Snapshot[]
+}
+model Session {
+  id String @id
+  tokenDigest String @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  verifications Verification[]
+  credentials Credential[]
+}
+model ExpectedOrder {
+  id String @id
+  studentId String
+  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  platform String
+  merchantOrderId String
+  originalOrderId String
+  status String @default("PENDING")
+  createdAt DateTime @default(now())
+  tracking OrderReference[]
+  parcels Parcel[]
+  decisions Decision[]
+  handovers Handover[]
+  @@index([platform, merchantOrderId])
+}
+model OrderReference {
+  id String @id
+  orderId String
+  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  namespace String
+  value String
+  originalValue String
+  @@unique([orderId, namespace, value])
+  @@index([namespace, value])
+}
+model Parcel {
+  id String @id
+  physicalReference String
+  physicalKey String @unique
+  description String
+  storageLocation String
+  recipientEmail String
+  recipientStudentNumber String
+  recipientName String
+  source String
+  status String @default("RECEIVED")
+  receivedAt DateTime @default(now())
+  revision Int @default(1)
+  orderId String?
+  order ExpectedOrder? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  studentId String?
+  student User? @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  hold String @default("NONE")
+  holdReason String @default("")
+  matchOutcome String @default("NO_MATCH")
+  matchExplanation String @default("")
+  credentialState String @default("NONE")
+  reviewedFingerprint String?
+  observedFingerprint String?
+  identifiers ParcelIdentifier[]
+  decisions Decision[]
+  credentials Credential[]
+  verifications Verification[]
+  handover Handover?
+  audits AuditEvent[]
+  notifications Notification[]
+  @@index([studentId, receivedAt, id])
+}
+model ParcelIdentifier {
+  id String @id
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  kind String
+  namespace String
+  value String
+  originalValue String
+  @@index([kind, namespace, value])
+}
+model Decision {
+  id String @id
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  orderId String
+  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  fingerprint String
+  reason String
+  identifierReviewed Boolean
+  recipientVerified Boolean
+  conflictsResolved Boolean
+  createdAt DateTime @default(now())
+}
+model Credential {
+  id String @id
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  sessionId String
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  otpDigest String
+  qrDigest String
+  state String @default("ACTIVE")
+  attempts Int @default(0)
+  issuedAt DateTime @default(now())
+  expiresAt DateTime
+  verifications Verification[]
+  @@index([parcelId, issuedAt])
+}
+model Verification {
+  id String @id
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  credentialId String
+  credential Credential @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  staffSessionId String
+  staffSession Session @relation(fields: [staffSessionId], references: [id], onDelete: Restrict)
+  parcelRevision Int
+  expiresAt DateTime
+  consumedAt DateTime?
+  handover Handover?
+}
+model Handover {
+  id String @id
+  parcelId String @unique
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  orderId String
+  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  studentId String
+  student User @relation("StudentHandovers", fields: [studentId], references: [id], onDelete: Restrict)
+  staffId String
+  staff User @relation("StaffHandovers", fields: [staffId], references: [id], onDelete: Restrict)
+  verificationId String @unique
+  verification Verification @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+  storageLocation String
+  confirmedAt DateTime @default(now())
+  idempotency Idempotency[]
+}
+model Idempotency {
+  id String @id
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  operation String
+  key String
+  fingerprint String
+  result Json
+  expiresAt DateTime?
+  receiptId String?
+  receipt Handover? @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  @@unique([actorId, operation, key])
+}
+model Notification {
+  id String @id
+  eventKey String @unique
+  studentId String
+  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  title String
+  message String
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  attempts DeliveryAttempt[]
+  @@index([studentId, createdAt, id])
+}
+model DeliveryAttempt {
+  id String @id
+  notificationId String
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  state String @default("PENDING")
+  simulated Boolean @default(true)
+  providerEventId String? @unique
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  results DeliveryResult[]
+  @@index([state, createdAt])
+}
+model DeliveryResult {
+  eventId String @id
+  attemptId String
+  attempt DeliveryAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  state String
+  occurredAt DateTime
+}
+model AuditEvent {
+  id String @id
+  parcelId String
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  action String
+  reason String
+  at DateTime @default(now())
+}
+model Snapshot {
+  id String @id
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  binding String
+  ids Json
+  offset Int
+  expiresAt DateTime
+}
+model RateWindow {
+  key String @id
+  count Int
+  expiresAt DateTime
+}

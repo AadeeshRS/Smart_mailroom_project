@@ -1,0 +1,18 @@
+import type { Prisma } from '@prisma/client';
+import type { S } from './contract.js';
+export const orderInclude = { tracking: true, student: true, parcels: { select: { id: true } } } satisfies Prisma.ExpectedOrderInclude;
+// The partial unique index makes ACTIVE the unambiguous current credential,
+// including when multiple replacements share a millisecond timestamp.
+export const parcelInclude = { identifiers: true, audits: { orderBy: [{ at: 'asc' }, { id: 'asc' }] }, handover: true, credentials: { where: { state: 'ACTIVE' }, take: 1 } } satisfies Prisma.ParcelInclude;
+export type O = Prisma.ExpectedOrderGetPayload<{ include: typeof orderInclude }>;
+export type P = Prisma.ParcelGetPayload<{ include: typeof parcelInclude }>;
+export type H = Prisma.HandoverGetPayload<Record<never, never>>;
+export type U = Prisma.UserGetPayload<Record<never, never>>;
+export const profile = (u: U): S<'Profile'> => ({ id: u.id, name: u.name, email: u.email, role: u.role as S<'Profile'>['role'], ...(u.studentNumber ? { studentNumber: u.studentNumber } : {}) });
+export const refs = (o: O) => [{ kind: 'ORDER_ID', namespace: o.platform, value: o.merchantOrderId }, ...o.tracking.map(r => ({ kind: 'TRACKING', namespace: r.namespace, value: r.value }))];
+export const order = (o: O, duplicateClaim: boolean): S<'ExpectedOrder'> => ({ id: o.id, studentId: o.studentId, platform: o.platform as S<'Platform'>, merchantOrderId: o.merchantOrderId, tracking: o.tracking.map(r => ({ kind: 'TRACKING', namespace: r.namespace as S<'Carrier'>, value: r.value })), status: o.status as S<'OrderStatus'>, createdAt: o.createdAt.toISOString(), parcelIds: o.parcels.map(p => p.id), duplicateClaim });
+export const eligible = (p: P) => p.status === 'AWAITING_COLLECTION' && p.hold === 'NONE' && !!p.studentId && !!p.orderId;
+export const parcel = (p: P, now: Date): S<'Parcel'> => ({ id: p.id, description: p.description, storageLocation: p.storageLocation, physicalReference: p.physicalReference, status: p.status as S<'ParcelStatus'>, receivedAt: p.receivedAt.toISOString(), ...(p.orderId ? { orderId: p.orderId } : {}), ...(p.studentId ? { studentId: p.studentId } : {}), revision: p.revision, matchOutcome: p.matchOutcome as S<'MatchOutcome'>, matchExplanation: p.status === 'CLOSED' ? 'Collected; retained receipt available.' : p.hold !== 'NONE' ? 'Mailroom review is required before collection.' : eligible(p) ? 'Matched parcel is ready for collection.' : 'Awaiting mailroom matching review.', hold: p.hold as S<'Hold'>, holdReason: p.hold === 'NONE' ? '' : 'Collection is paused pending mailroom review.', collectionEligible: eligible(p), credentialState: p.credentialState === 'ACTIVE' && p.credentials[0]?.expiresAt <= now ? 'EXPIRED' : p.credentialState as S<'CredentialState'>, ...(p.handover ? { receiptId: p.handover.id } : {}) });
+export const staffParcel = (p: P, now: Date): S<'StaffParcel'> => ({ ...parcel(p, now), identifiers: p.identifiers.map(i => ({ kind: i.kind, namespace: i.namespace, value: i.value }) as S<'Identifier'>), recipientEmail: p.recipientEmail, recipientStudentNumber: p.recipientStudentNumber, recipientName: p.recipientName, source: p.source as 'MANUAL' | 'CAMERA', matchExplanation: p.matchExplanation, holdReason: p.holdReason, audit: p.audits.map(a => ({ at: a.at.toISOString(), actorId: a.actorId, action: a.action, reason: a.reason })) });
+export const receipt = (h: H): S<'Receipt'> => ({ id: h.id, parcelId: h.parcelId, orderId: h.orderId, studentId: h.studentId, confirmedAt: h.confirmedAt.toISOString(), storageLocation: h.storageLocation });
+export const staffReceipt = (h: H): S<'StaffReceipt'> => ({ ...receipt(h), staffId: h.staffId, verificationId: h.verificationId });

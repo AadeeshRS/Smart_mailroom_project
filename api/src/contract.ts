@@ -1,0 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import YAML from 'yaml';
+import type { components, operations } from '../../contracts/generated/api.js';
+export type S<K extends keyof components['schemas']> = components['schemas'][K];
+type Json<T> = T extends { content: { 'application/json': infer V } } ? V : Record<never, never>;
+type Params<T, K extends string> = T extends { parameters: infer P } ? K extends keyof P ? NonNullable<P[K]> extends never ? Record<never, never> : NonNullable<P[K]> : Record<never, never> : Record<never, never>;
+export type Input<K extends keyof operations> = (operations[K] extends { requestBody: infer B } ? Json<B> : Record<never, never>) & Params<operations[K], 'path'> & Params<operations[K], 'query'>;
+export type Output<K extends keyof operations> = operations[K] extends { responses: { 200: infer R } } ? Json<R> : never;
+export const contract = YAML.parse(readFileSync(resolve(process.env.CONTRACT_PATH ?? '../contracts/openapi.yaml'), 'utf8'));
+export const schemaRef = (schema: unknown) => JSON.parse(JSON.stringify(schema).replaceAll('"#/components/', '"mailroom#/components/'));

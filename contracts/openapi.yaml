@@ -1,10 +1,9 @@
 openapi: 3.0.3
 info:
-  title: Smart Mailroom - DRAFT — FRONTEND PROTOTYPE
+  title: Smart Mailroom - FROZEN — APPROVED INTEGRATION CONTRACT
   version: 0.2.0
   description: >-
-    DRAFT — FRONTEND PROTOTYPE. Proposed decisions below are complete for backend review, not
-    reviewer approval. Simple REST/JSON API; development-only provisioned authentication, bearer
+    FROZEN — APPROVED INTEGRATION CONTRACT. Reviewer-approved API version 0.2.0; methods, schemas and business semantics are frozen. Simple REST/JSON API; development-only provisioned authentication, bearer
     demo sessions last 30 minutes. Production must omit demo login/reset. Roles and ownership
     enforced at the service boundary; not-owned resources return NOT_FOUND. Backend IDs are prefixed
     opaque cryptographically random values, never predictable frontend counters. UTC RFC3339
@@ -615,7 +614,7 @@ paths:
         physicalReference uniquely identifies a physical parcel (not an order or shared tracking);
         duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to
         AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed
-        case-normalized value, exactly one unconflicted candidate, email or student-number
+        value normalized according to the explicit platform/carrier policy, exactly one unconflicted candidate, email or student-number
         corroboration and no conflicting supplied recipient or comparable identifier. Name alone
         never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot
         auto-match. Separate physical references support split shipments. Required idempotencyKey.
