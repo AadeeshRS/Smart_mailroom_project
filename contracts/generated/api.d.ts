@@ -164,7 +164,7 @@ export interface paths {
         put?: never;
         /**
          * Save physical intake and evaluate trustworthy matching
-         * @description Camera returns untrusted text only; fields must be classified and labelReviewed true. physicalReference uniquely identifies a physical parcel (not an order or shared tracking); duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed case-normalized value, exactly one unconflicted candidate, email or student-number corroboration and no conflicting supplied recipient or comparable identifier. Name alone never suffices. OTHER platform cannot auto-match. Separate physical references support split shipments.
+         * @description Camera returns untrusted text only; fields must be classified and labelReviewed true. physicalReference uniquely identifies a physical parcel (not an order or shared tracking); duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed case-normalized value, exactly one unconflicted candidate, email or student-number corroboration and no conflicting supplied recipient or comparable identifier. Name alone never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot auto-match. Separate physical references support split shipments.
          */
         post: operations["intakeParcel"];
         delete?: never;
@@ -472,7 +472,7 @@ export interface components {
         Ok: {
             ok: boolean;
         };
-        /** @description ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier. Namespace and values normalize by trim + uppercase in this demo. OTHER platform always requires staff review. Carrier alias/normalization policy needs backend review. */
+        /** @description ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier. Namespace and values normalize by trim + uppercase in this demo. OTHER platform always requires staff review. A match only in the generic OTHER carrier namespace also requires review. Carrier alias/normalization policy needs backend review. */
         Identifier: {
             /** @enum {string} */
             kind: "ORDER_ID" | "TRACKING";

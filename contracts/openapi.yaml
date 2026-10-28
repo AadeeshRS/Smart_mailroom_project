@@ -455,7 +455,7 @@ paths:
         AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed
         case-normalized value, exactly one unconflicted candidate, email or student-number
         corroboration and no conflicting supplied recipient or comparable identifier. Name alone
-        never suffices. OTHER platform cannot auto-match. Separate physical references support split
+        never suffices. OTHER platform or a match only in the generic OTHER carrier namespace cannot auto-match. Separate physical references support split
         shipments.
       parameters: []
       responses:
@@ -1236,7 +1236,7 @@ components:
           maxLength: 100
       description: ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier.
         Namespace and values normalize by trim + uppercase in this demo. OTHER platform always
-        requires staff review. Carrier alias/normalization policy needs backend review.
+        requires staff review. A match only in the generic OTHER carrier namespace also requires review. Carrier alias/normalization policy needs backend review.
     TrackingReference:
       type: object
       additionalProperties: false
