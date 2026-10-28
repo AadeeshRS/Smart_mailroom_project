@@ -9,17 +9,17 @@ export type Input<K extends keyof operations> =
   (operations[K] extends { requestBody: infer B } ? Json<B> : Record<never, never>) &
   Params<operations[K], 'path'> & Params<operations[K], 'query'>;
 export type Output<K extends keyof operations> = operations[K] extends { responses: { 200: infer R } } ? Json<R> : never;
-/** The future HTTP adapter implements this interface, mapping generated operations to HTTP.
+/** Both HTTP and mock adapters implement this generated-operation interface.
  * Authentication context belongs to the adapter, never a caller-supplied role/student ID.
  */
 export type MailroomService = { [K in keyof operations]: (input: Input<K>) => Promise<Output<K>> };
 
 export class ServiceError extends Error {
   readonly envelope: Schema<'ErrorEnvelope'>;
-  constructor(readonly code: Schema<'ErrorCode'>, message: string, readonly retryable = false) {
+  constructor(readonly code: Schema<'ErrorCode'>, message: string, readonly retryable = false, requestId = 'demo-local') {
     super(message);
     this.name = 'ServiceError';
-    this.envelope = { error: { code, message, retryable, requestId: 'demo-local' } };
+    this.envelope = { error: { code, message, retryable, requestId } };
   }
 }
 

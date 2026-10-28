@@ -75,7 +75,7 @@ export function VerifyScreen() {
   </Page>;
 }
 export function ConfirmScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(); const { api, session, recovery, loseNextConfirmationResponse } = useRuntime(); const router = useRouter(); const action = useAction();
+  const { id } = useLocalSearchParams<{ id: string }>(); const { api, session, recovery, loseNextConfirmationResponse, mode } = useRuntime(); const router = useRouter(); const action = useAction();
   const [uncertain, setUncertain] = useState(false); const [simulateLoss, setSimulateLoss] = useState(false);
   const [verification] = useState(() => pendingVerification?.parcelId === id ? pendingVerification : undefined);
   const [confirmed, setConfirmed] = useState(false); const key = useRef<string | undefined>(undefined); const [clock, setClock] = useState(Date.now());
@@ -88,7 +88,7 @@ export function ConfirmScreen() {
     <Card><Tag value="CREDENTIAL_VERIFIED" /><Heading>{verification.student.name}</Heading><Body>{verification.student.email}</Body><Body>Student number · {verification.student.studentNumber}</Body><Heading>{verification.parcel.description}</Heading><Body>Parcel · {verification.parcelId}</Body><Body>Physical reference · {verification.parcel.physicalReference}</Body><Body>Storage · {verification.parcel.storageLocation}</Body><Muted>Bound to parcel revision {verification.parcelRevision}. Verification expires {date(verification.expiresAt)}.</Muted></Card>
     {expired && !uncertain && <Notice danger>Verification expired. Return and verify the current credential again.</Notice>}
     <Feedback error={action.error} />
-    {uncertain ? <Card><Heading>Original confirmation saved</Heading><Notice>The response is uncertain. Recover this saved request with its original key, including after reload or verification expiry.</Notice><Button label="Recover original confirmation" onPress={() => router.replace(`/recover/${id}`)} /></Card> : <><Check label="Simulate a lost confirmation response once" checked={simulateLoss} onChange={setSimulateLoss} /><Check label="I checked the student and parcel details and physically handed over this exact parcel" checked={confirmed} onChange={setConfirmed} />
+    {uncertain ? <Card><Heading>Original confirmation saved</Heading><Notice>The response is uncertain. Recover this saved request with its original key, including after reload or verification expiry.</Notice><Button label="Recover original confirmation" onPress={() => router.replace(`/recover/${id}`)} /></Card> : <>{mode === 'mock' && <Check label="Simulate a lost confirmation response once" checked={simulateLoss} onChange={setSimulateLoss} />}<Check label="I checked the student and parcel details and physically handed over this exact parcel" checked={confirmed} onChange={setConfirmed} />
     <Button label="Confirm handover and save receipt" disabled={!confirmed || expired} busy={action.busy} onPress={() => action.run(async () => {
       const existing = await recovery.get(session.profile.id, id);
       if (existing) { setUncertain(true); router.replace(`/recover/${id}`); return; }

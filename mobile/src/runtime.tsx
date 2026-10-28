@@ -3,17 +3,28 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createMockKernel } from './api/mock';
-import { ServiceError, type MailroomService, type Schema } from './api/service';
+import { DEMO_ACCOUNTS, ServiceError, type MailroomService, type Schema } from './api/service';
 import { ConfirmationRecoveryStore } from './confirmationRecovery';
+import { createHttpService, normalizeBaseUrl } from './api/http';
+import { durableWrites } from './api/writeRecovery';
 
-const kernel = createMockKernel(AsyncStorage);
-const api = kernel.client();
-const recovery = new ConfirmationRecoveryStore(AsyncStorage);
+const configuredMode = process.env.EXPO_PUBLIC_API_MODE ?? 'mock';
+if (!['mock', 'http'].includes(configuredMode)) throw new Error('EXPO_PUBLIC_API_MODE must be mock or http.');
+const mode = configuredMode as 'mock' | 'http';
+const apiBaseUrl = mode === 'http' ? normalizeBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL ?? '') : '';
+const kernel = mode === 'mock' ? createMockKernel(AsyncStorage) : undefined;
+const writeRecovery = kernel ? undefined : durableWrites(createHttpService(apiBaseUrl), AsyncStorage, apiBaseUrl);
+const api = kernel ? kernel.client() : writeRecovery!.api;
+const recovery = new ConfirmationRecoveryStore(AsyncStorage, mode === 'http' ? 'http:' + apiBaseUrl : 'mock');
+const configuredIds = [process.env.EXPO_PUBLIC_ASHA_ACCOUNT_ID, process.env.EXPO_PUBLIC_NEEL_ACCOUNT_ID, process.env.EXPO_PUBLIC_STAFF_ACCOUNT_ID];
+const accounts = mode === 'mock' ? [...DEMO_ACCOUNTS] : DEMO_ACCOUNTS.flatMap((account, index) => configuredIds[index] ? [{ ...account, id: configuredIds[index]! }] : []);
 type Runtime = {
   api: MailroomService; session: Schema<'Session'> | null;
   setSession: (session: Schema<'Session'> | null) => void;
   online: boolean; toggleOnline: () => void; handleError: (error: unknown) => string; sessionNotice: string;
   recovery: ConfirmationRecoveryStore; loseNextConfirmationResponse: () => void;
+  mode: 'mock' | 'http'; apiBaseUrl: string; accounts: { id: string; name: string; detail: string }[];
+  writeRecovery: ReturnType<typeof durableWrites> | undefined;
 };
 const Context = createContext<Runtime | null>(null);
 export function RuntimeProvider({ children }: { children: React.ReactNode }) {
@@ -35,7 +46,7 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') expire(); });
     return () => { clearTimeout(timer); subscription.remove(); };
   }, [session, router]);
-  return <Context.Provider value={{ api, recovery, loseNextConfirmationResponse: kernel.loseNextConfirmationResponse, session, setSession: value => { setSession(value); if (value) setSessionNotice(''); }, sessionNotice, online, toggleOnline: () => { const value = !kernel.isOnline(); kernel.setOnline(value); setOnline(value); }, handleError }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ api, mode, apiBaseUrl, accounts, recovery, writeRecovery, loseNextConfirmationResponse: () => kernel?.loseNextConfirmationResponse(), session, setSession: value => { setSession(value); if (value) setSessionNotice(''); }, sessionNotice, online, toggleOnline: () => { if (!kernel) return; const value = !kernel.isOnline(); kernel.setOnline(value); setOnline(value); }, handleError }}>{children}</Context.Provider>;
 }
 export const useRuntime = () => { const value = useContext(Context); if (!value) throw new Error('Runtime missing'); return value; };
 

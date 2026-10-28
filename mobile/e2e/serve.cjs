@@ -3,7 +3,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const root = path.resolve(__dirname, '../dist');
+const root = path.resolve(__dirname, '..', process.env.WEB_EXPORT_DIRECTORY || 'dist');
 if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Run npm run export:web first.');
 const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.json': 'application/json' };
 http.createServer((req, res) => {
@@ -14,4 +14,4 @@ http.createServer((req, res) => {
   const file = fs.existsSync(target) && fs.statSync(target).isFile() ? target : path.join(root, 'index.html');
   res.writeHead(200, { 'Content-Type': types[path.extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(file).pipe(res);
-}).listen(8081, '127.0.0.1', () => console.log('Production export ready at http://127.0.0.1:8081'));
+}).listen(Number(process.env.WEB_PORT || 8081), '127.0.0.1', () => console.log('Production export ready'));

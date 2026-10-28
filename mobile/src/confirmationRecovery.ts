@@ -13,8 +13,8 @@ export type ConfirmationRecovery = {
  */
 export class ConfirmationRecoveryStore {
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private storage: Persistence) {}
-  private key(staffId: string) { return `smart-mailroom-confirmation-recovery-v1:${staffId}`; }
+  constructor(private storage: Persistence, private environment = 'mock') {}
+  private key(staffId: string) { return this.environment === 'mock' ? `smart-mailroom-confirmation-recovery-v1:${staffId}` : `smart-mailroom-confirmation-recovery-v1:${encodeURIComponent(this.environment)}:${staffId}`; }
   async list(staffId: string): Promise<ConfirmationRecovery[]> {
     const raw = await this.storage.getItem(this.key(staffId));
     if (!raw) return [];

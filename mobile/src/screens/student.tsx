@@ -6,6 +6,7 @@ import { retryKey, useAction, useResource, useRuntime } from '../runtime';
 import { Body, Button, Card, Choice, Empty, Feedback, Field, Heading, Muted, Notice, Page, ResourceState, Tag, date, styles } from '../ui';
 
 import { PLATFORMS, CARRIERS } from '../api/identifiers';
+import { WriteRecoveryInbox } from './writeRecovery';
 export const platforms = PLATFORMS;
 export const carriers = CARRIERS;
 export function StudentHome() {
@@ -13,7 +14,7 @@ export function StudentHome() {
   const resource = useResource(async () => ({ orders: await api.listOrders({ limit: 100 }), parcels: await api.listParcels({ limit: 100 }), inbox: await api.listNotifications({ limit: 100 }) }));
   return <Page title={`Hello, ${session?.profile.name.split(' ')[0] ?? 'there'}.`} subtitle="Know what’s expected. See what’s ready.">
     <Card><Tag value="ORDER_FIRST" /><Heading>Expecting something?</Heading><Body>Register the merchant order ID. Add tracking whenever it becomes available.</Body><Button label="Register an expected order" onPress={() => router.push('/register')} /></Card>
-    <ResourceState {...resource} />
+    <WriteRecoveryInbox /><ResourceState {...resource} />
     {resource.data && <><View style={styles.row}><Card><Heading>{resource.data.parcels.items.filter(p => p.collectionEligible).length} ready</Heading><Muted>Parcels to collect</Muted></Card><Card><Heading>{resource.data.inbox.items.filter(n => !n.readAt).length} unread</Heading><Muted>Inbox updates</Muted></Card></View><Heading>Ready for your next step</Heading>{resource.data.parcels.items.filter(p => p.status !== 'CLOSED').slice(0, 3).map(p => <ParcelCard key={p.id} parcel={p} />)}{!resource.data.parcels.items.some(p => p.status !== 'CLOSED') && <Empty title="Nothing to collect yet" detail="A validated match at mailroom intake will make a parcel appear here and in your inbox." />}<Button label="View all expected orders" variant="quiet" onPress={() => router.push('/student/orders')} /></>}
     <Muted>Counts show up to the latest 100 records. Each physical shipment has its own collection code.</Muted>
   </Page>;

@@ -20,7 +20,8 @@ export const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#9DB1AC', backgroundColor: colors.white, borderRadius: 12, padding: 14, fontSize: 16, minHeight: 50, color: colors.ink },
 });
 export function DemoBanner() {
-  return <View style={{ flexShrink: 0, backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 9 }}><Text style={{ color: '#F0F5DB', textAlign: 'center', fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>DEMO MODE · SYNTHETIC DATA ONLY</Text></View>;
+  const { mode } = useRuntime();
+  return <View style={{ flexShrink: 0, backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 9 }}><Text style={{ color: '#F0F5DB', textAlign: 'center', fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>{mode === 'http' ? 'HTTP DEMO · POSTGRESQL · SYNTHETIC DATA ONLY' : 'DEMO MODE · SYNTHETIC DATA ONLY'}</Text></View>;
 }
 export function Page({ title, subtitle, children, back, modal = false }: { title: string; subtitle?: string; children: React.ReactNode; back?: () => void; modal?: boolean }) {
   const { online, toggleOnline } = useRuntime();
