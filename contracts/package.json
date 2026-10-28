@@ -1,0 +1,16 @@
+{
+  "name": "smart-mailroom-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "generate": "node tooling/generate.mjs",
+    "validate": "node tooling/validate.mjs",
+    "check": "node tooling/check-generated.mjs"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "12.1.0",
+    "openapi-typescript": "7.13.0",
+    "yaml": "2.8.3"
+  }
+}

@@ -1,0 +1,1806 @@
+openapi: 3.0.3
+info:
+  title: Smart Mailroom - DRAFT — FRONTEND PROTOTYPE
+  version: 0.1.0
+  description: Proposed canonical contract; independent review required before backend implementation.
+    No backend, SSO or notification provider exists. All IDs are typed prefixed strings; all
+    response timestamps UTC. Bearer sessions enforce role and ownership at service boundary;
+    resource-not-owned is NOT_FOUND. Mock authorization is illustrative, not production enforcement.
+    Collection eligibility = AWAITING_COLLECTION with linked active order/student and hold NONE.
+    MATCHED order means at least one linked shipment, not all arrived. Credential, hold and
+    notification states are independent of parcel lifecycle. No automatic matching from names or
+    cross-kind identifiers. Pagination is offset cursor, default 20 max 100, newest first; cursor
+    consistency under live writes remains a backend review decision. Error status mappings in
+    operation descriptions take precedence; all errors share ErrorEnvelope. External delivery states
+    are simulated only, independently of inbox read state.
+servers:
+  - url: https://api.example.invalid/v1
+    description: Placeholder only; app runs mock adapter
+security:
+  - bearerAuth: []
+paths:
+  /demo/sessions:
+    post:
+      operationId: login
+      summary: Sign in to a fixed provisioned demonstration account
+      description: Passcode is demonstration-only. Role is determined by the provisioned account; no
+        client role input. Session lasts 30 minutes. No SSO or domain verification.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      security: []
+  /session:
+    get:
+      operationId: getSession
+      summary: Read current session
+      description: Read current session
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+    delete:
+      operationId: logout
+      summary: Revoke current session
+      description: Revoke current session
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+  /guides/{platform}:
+    get:
+      operationId: getGuide
+      summary: Platform-specific order-ID guidance
+      description: Platform-specific order-ID guidance
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Platform"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Guide"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles: []
+      security: []
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List owned expected orders
+      description: List owned expected orders
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            description: "Case-insensitive substring search of authorized records. Orders: merchant order
+              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              Receipts: receipt/parcel/order IDs."
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+    post:
+      operationId: createOrder
+      summary: Register expected order and re-evaluate stored parcels
+      description: "Same student active platform/order duplicate: 409 DUPLICATE_ORDER. Cross-student
+        overlapping claims retained as disputed, never first-claim allocation. New claims or
+        tracking additions re-evaluate all unclosed relevant parcels, invalidate credentials and
+        hold assigned parcels on new ambiguity/conflict. Late orders use identical matching
+        safeguards."
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpectedOrder"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrder"
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Read an owned expected order
+      description: Read an owned expected order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/OrderId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpectedOrder"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+  /orders/{orderId}/tracking:
+    post:
+      operationId: addTracking
+      summary: Append a later carrier tracking reference
+      description: Append a later carrier tracking reference
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/OrderId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpectedOrder"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTracking"
+  /orders/{orderId}/cancellation:
+    post:
+      operationId: cancelOrder
+      summary: Cancel only PENDING request with no linked parcels
+      description: Cancel only PENDING request with no linked parcels
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/OrderId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpectedOrder"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+  /parcels:
+    get:
+      operationId: listParcels
+      summary: List authorized parcels including retained closed history
+      description: Students see only linked parcels they own, staff see all. Filters combine by AND;
+        stable descending receivedAt/id order. Closed records retained.
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            description: "Case-insensitive substring search of authorized records. Orders: merchant order
+              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              Receipts: receipt/parcel/order IDs."
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ParcelStatus"
+        - name: hold
+          in: query
+          schema:
+            $ref: "#/components/schemas/Hold"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParcelPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+    post:
+      operationId: intakeParcel
+      summary: Save physical intake and evaluate trustworthy matching
+      description: Camera returns untrusted text only; fields must be classified and labelReviewed true.
+        physicalReference uniquely identifies a physical parcel (not an order or shared tracking);
+        duplicate intake returns 409 DUPLICATE_INTAKE. Save RECEIVED audit then resolve to
+        AWAITING_MATCH or AWAITING_COLLECTION. Matching requires same kind, namespace and trimmed
+        case-normalized value, exactly one unconflicted candidate, email or student-number
+        corroboration and no conflicting supplied recipient or comparable identifier. Name alone
+        never suffices. OTHER platform cannot auto-match. Separate physical references support split
+        shipments.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Parcel"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeInput"
+  /parcels/{parcelId}:
+    get:
+      operationId: getParcel
+      summary: Read authorized parcel
+      description: Read authorized parcel
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Parcel"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+  /parcels/{parcelId}/review:
+    get:
+      operationId: getReview
+      summary: Inspect candidate evidence; staff only
+      description: Comparable candidates first, then remaining active orders for evidence-led manual
+        reconciliation. Candidate profiles never exposed to student endpoints.
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParcelReview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+  /parcels/{parcelId}/reconciliation:
+    post:
+      operationId: reconcileParcel
+      summary: Reconcile with evidence checklist and recorded reason
+      description: All checklist booleans true; reason at least 12 characters. expectedRevision must
+        match. May resolve disputes or transfer an uncollected parcel with explicit audit and
+        notifications; invalidates outstanding credentials. Cannot change CLOSED parcel ownership.
+        Review policy is a proposed decision for independent approval; no screenshot/document
+        upload. A resolved decision remains effective for the reviewed claims. New relevant claims
+        or identifiers invalidate the reviewed evidence baseline and trigger a new hold; unrelated
+        registrations do not.
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Parcel"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReconcileInput"
+  /parcels/{parcelId}/hold:
+    post:
+      operationId: setHold
+      summary: Set or resolve collection hold with audit reason
+      description: Every change increments revision and invalidates credentials. DISPUTE can only be
+        cleared by evidence-led reconciliation, not a simple hold change. CLOSED parcel records
+        never transfer.
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Parcel"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldInput"
+  /parcels/{parcelId}/credentials:
+    post:
+      operationId: issueCredential
+      summary: Issue or explicitly replace parcel collection credential
+      description: "Eligible owner only; ten-minute validity, one current credential. Six-digit string OTP
+        and PII-free versioned QR. Same key/same body in same session replays original issuance
+        while active; changed body 409 IDEMPOTENCY_CONFLICT. Different key with active credential
+        and replace false: 409 CREDENTIAL_ACTIVE. replace true invalidates old OTP/QR and
+        verifications. Secrets only in issuance response, never list/detail/logs. Mock keeps secrets
+        in volatile memory; after restart old retry yields ISSUANCE_RETRY_UNAVAILABLE and student
+        must use a fresh key/replacement. Expired/invalidated key cannot silently issue another
+        credential. Backend replay/secret-retention policy needs review."
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueInput"
+  /parcels/{parcelId}/verifications:
+    post:
+      operationId: verifyCredential
+      summary: Verify OTP or QR without consuming credential
+      description: OTP requires six digits for this parcel; QR requires v=1, current credentialRef and
+        opaque token for this parcel. No PII in QR. Five wrong well-formed OTP attempts invalidate
+        current credential. Verification binds parcel, current credential, parcel revision and staff
+        session. Expires at min(now+2 minutes, credential expiry). Does not close parcel or consume
+        credential.
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Verification"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyInput"
+  /parcels/{parcelId}/handover:
+    post:
+      operationId: confirmHandover
+      summary: Explicitly confirm physical handover or replay original receipt
+      description: "Requires true physicalHandoverConfirmed, valid bound verification and idempotencyKey.
+        Same staff account/key/body replays original retained receipt even after restart or
+        verification expiry. Reusing key with changed body: 409 IDEMPOTENCY_CONFLICT. Different
+        successful key for already CLOSED: ALREADY_COLLECTED; changed revision: REVISION_CHANGED;
+        hold: COLLECTION_HOLD; stale competing verification: CONCURRENT_CONFLICT; expired
+        verification: VERIFICATION_EXPIRED. One receipt per parcel. Backend must atomically recheck
+        authorization, hold, revision, current credential, verification, update CLOSED, consume
+        credential and insert receipt/idempotency record. Mock simulates serialized state changes
+        only, not database safety."
+      parameters:
+        - name: parcelId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ParcelId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Confirmation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmInput"
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List owned persistent in-app inbox
+      description: List owned persistent in-app inbox
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            description: "Case-insensitive substring search of authorized records. Orders: merchant order
+              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              Receipts: receipt/parcel/order IDs."
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+  /notifications/{notificationId}/read:
+    post:
+      operationId: readNotification
+      summary: Mark owned in-app notification read
+      description: Mark owned in-app notification read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/NotificationId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+  /receipts:
+    get:
+      operationId: listReceipts
+      summary: Search authorized retained handover receipts
+      description: Search authorized retained handover receipts
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            description: Zero-based decimal offset. Omit for first page; invalid cursors rejected.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            description: "Case-insensitive substring search of authorized records. Orders: merchant order
+              ID/tracking. Parcels: ID, description, storage, physical reference, identifiers.
+              Receipts: receipt/parcel/order IDs."
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+  /receipts/{receiptId}:
+    get:
+      operationId: getReceipt
+      summary: Read authorized retained receipt
+      description: Read authorized retained receipt
+      parameters:
+        - name: receiptId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ReceiptId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STUDENT
+        - STAFF
+  /demo/reset:
+    post:
+      operationId: resetDemo
+      summary: Explicitly reset synthetic demo data and revoke all sessions
+      description: Explicitly reset synthetic demo data and revoke all sessions
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        "423":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      x-roles:
+        - STAFF
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Provisioned demo sessions now; future college auth requires reviewed backend design.
+  schemas:
+    UserId:
+      type: string
+      pattern: ^usr_[A-Za-z0-9_-]+$
+    OrderId:
+      type: string
+      pattern: ^ord_[A-Za-z0-9_-]+$
+    ParcelId:
+      type: string
+      pattern: ^par_[A-Za-z0-9_-]+$
+    NotificationId:
+      type: string
+      pattern: ^ntf_[A-Za-z0-9_-]+$
+    CredentialId:
+      type: string
+      pattern: ^crd_[A-Za-z0-9_-]+$
+    VerificationId:
+      type: string
+      pattern: ^ver_[A-Za-z0-9_-]+$
+    ReceiptId:
+      type: string
+      pattern: ^rcp_[A-Za-z0-9_-]+$
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC3339 UTC timestamp; responses end in Z.
+    Platform:
+      type: string
+      enum:
+        - AMAZON
+        - FLIPKART
+        - MYNTRA
+        - OTHER
+    OrderStatus:
+      type: string
+      enum:
+        - PENDING
+        - MATCHED
+        - CANCELLED
+    ParcelStatus:
+      type: string
+      enum:
+        - RECEIVED
+        - AWAITING_MATCH
+        - AWAITING_COLLECTION
+        - CLOSED
+    Hold:
+      type: string
+      enum:
+        - NONE
+        - REVIEW
+        - DISPUTE
+    MatchOutcome:
+      type: string
+      enum:
+        - MATCHED
+        - NO_MATCH
+        - AMBIGUOUS
+        - CONFLICT
+        - DUPLICATE
+        - INSUFFICIENT_EVIDENCE
+    CredentialState:
+      type: string
+      enum:
+        - NONE
+        - ACTIVE
+        - EXPIRED
+        - INVALIDATED
+        - CONSUMED
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION
+        - UNAUTHENTICATED
+        - SESSION_EXPIRED
+        - FORBIDDEN
+        - NOT_FOUND
+        - DUPLICATE_ORDER
+        - DUPLICATE_INTAKE
+        - CANCELLATION_INELIGIBLE
+        - COLLECTION_HOLD
+        - NOT_ELIGIBLE
+        - CREDENTIAL_ACTIVE
+        - ISSUANCE_RETRY_UNAVAILABLE
+        - INVALID_CREDENTIAL
+        - CREDENTIAL_EXPIRED
+        - CREDENTIAL_INVALIDATED
+        - ATTEMPTS_EXCEEDED
+        - VERIFICATION_EXPIRED
+        - REVISION_CHANGED
+        - ALREADY_COLLECTED
+        - CONCURRENT_CONFLICT
+        - IDEMPOTENCY_CONFLICT
+        - NETWORK
+        - PERSISTENCE
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - requestId
+            - retryable
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+            requestId:
+              type: string
+            retryable:
+              type: boolean
+    Profile:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - email
+        - role
+      properties:
+        id:
+          $ref: "#/components/schemas/UserId"
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        studentNumber:
+          type: string
+        role:
+          type: string
+          enum:
+            - STUDENT
+            - STAFF
+    Session:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+        - profile
+        - expiresAt
+      properties:
+        token:
+          type: string
+        profile:
+          $ref: "#/components/schemas/Profile"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+    LoginInput:
+      type: object
+      additionalProperties: false
+      required:
+        - accountId
+        - passcode
+      properties:
+        accountId:
+          $ref: "#/components/schemas/UserId"
+        passcode:
+          type: string
+    Ok:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+    Identifier:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - namespace
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - ORDER_ID
+            - TRACKING
+        namespace:
+          type: string
+          minLength: 1
+          maxLength: 40
+        value:
+          type: string
+          minLength: 1
+          maxLength: 100
+      description: ORDER_ID namespace is the selected platform; TRACKING namespace is the carrier.
+        Namespace and values normalize by trim + uppercase in this demo. OTHER platform always
+        requires staff review. Carrier alias/normalization policy needs backend review.
+    TrackingReference:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - namespace
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - TRACKING
+        namespace:
+          type: string
+          minLength: 1
+          maxLength: 40
+        value:
+          type: string
+          minLength: 1
+          maxLength: 100
+    CreateOrder:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - merchantOrderId
+        - tracking
+      properties:
+        platform:
+          $ref: "#/components/schemas/Platform"
+        merchantOrderId:
+          type: string
+          minLength: 1
+          maxLength: 100
+        tracking:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackingReference"
+    AddTracking:
+      type: object
+      additionalProperties: false
+      required:
+        - reference
+      properties:
+        reference:
+          $ref: "#/components/schemas/TrackingReference"
+    ExpectedOrder:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - studentId
+        - platform
+        - merchantOrderId
+        - tracking
+        - status
+        - createdAt
+        - parcelIds
+        - duplicateClaim
+      properties:
+        id:
+          $ref: "#/components/schemas/OrderId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        merchantOrderId:
+          type: string
+        tracking:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackingReference"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        parcelIds:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParcelId"
+        duplicateClaim:
+          type: boolean
+    IntakeInput:
+      type: object
+      additionalProperties: false
+      required:
+        - identifiers
+        - recipientEmail
+        - recipientStudentNumber
+        - recipientName
+        - description
+        - storageLocation
+        - physicalReference
+        - source
+        - labelReviewed
+      properties:
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        recipientEmail:
+          type: string
+        recipientStudentNumber:
+          type: string
+        recipientName:
+          type: string
+        description:
+          type: string
+          minLength: 1
+          maxLength: 160
+        storageLocation:
+          type: string
+          minLength: 1
+          maxLength: 80
+        physicalReference:
+          type: string
+          minLength: 1
+          maxLength: 80
+        source:
+          type: string
+          enum:
+            - MANUAL
+            - CAMERA
+        labelReviewed:
+          type: boolean
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - at
+        - action
+        - actorId
+        - reason
+      properties:
+        at:
+          $ref: "#/components/schemas/Timestamp"
+        action:
+          type: string
+        actorId:
+          $ref: "#/components/schemas/UserId"
+        reason:
+          type: string
+    Parcel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - identifiers
+        - recipientEmail
+        - recipientStudentNumber
+        - recipientName
+        - description
+        - storageLocation
+        - physicalReference
+        - source
+        - status
+        - receivedAt
+        - revision
+        - matchOutcome
+        - matchExplanation
+        - hold
+        - holdReason
+        - collectionEligible
+        - credentialState
+        - audit
+      properties:
+        id:
+          $ref: "#/components/schemas/ParcelId"
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Identifier"
+        recipientEmail:
+          type: string
+        recipientStudentNumber:
+          type: string
+        recipientName:
+          type: string
+        description:
+          type: string
+        storageLocation:
+          type: string
+        physicalReference:
+          type: string
+        source:
+          type: string
+          enum:
+            - MANUAL
+            - CAMERA
+        status:
+          $ref: "#/components/schemas/ParcelStatus"
+        receivedAt:
+          $ref: "#/components/schemas/Timestamp"
+        orderId:
+          $ref: "#/components/schemas/OrderId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        revision:
+          type: integer
+          minimum: 1
+        matchOutcome:
+          $ref: "#/components/schemas/MatchOutcome"
+        matchExplanation:
+          type: string
+        hold:
+          $ref: "#/components/schemas/Hold"
+        holdReason:
+          type: string
+        collectionEligible:
+          type: boolean
+        credentialState:
+          $ref: "#/components/schemas/CredentialState"
+        audit:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        receiptId:
+          $ref: "#/components/schemas/ReceiptId"
+    Candidate:
+      type: object
+      additionalProperties: false
+      required:
+        - order
+        - student
+        - comparable
+        - corroborated
+        - conflicts
+      properties:
+        order:
+          $ref: "#/components/schemas/ExpectedOrder"
+        student:
+          $ref: "#/components/schemas/Profile"
+        comparable:
+          type: boolean
+        corroborated:
+          type: boolean
+        conflicts:
+          type: array
+          items:
+            type: string
+    ParcelReview:
+      type: object
+      additionalProperties: false
+      required:
+        - parcel
+        - candidates
+      properties:
+        parcel:
+          $ref: "#/components/schemas/Parcel"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candidate"
+    ReconcileInput:
+      type: object
+      additionalProperties: false
+      required:
+        - orderId
+        - expectedRevision
+        - identifierReviewed
+        - recipientVerified
+        - conflictsResolved
+        - reason
+      properties:
+        orderId:
+          $ref: "#/components/schemas/OrderId"
+        expectedRevision:
+          type: integer
+          minimum: 1
+        identifierReviewed:
+          type: boolean
+        recipientVerified:
+          type: boolean
+        conflictsResolved:
+          type: boolean
+        reason:
+          type: string
+          minLength: 12
+          maxLength: 500
+    HoldInput:
+      type: object
+      additionalProperties: false
+      required:
+        - hold
+        - reason
+        - expectedRevision
+      properties:
+        hold:
+          $ref: "#/components/schemas/Hold"
+        reason:
+          type: string
+          minLength: 12
+          maxLength: 500
+        expectedRevision:
+          type: integer
+          minimum: 1
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - studentId
+        - parcelId
+        - title
+        - message
+        - createdAt
+        - inAppAvailable
+        - externalDelivery
+        - simulatedExternal
+      properties:
+        id:
+          $ref: "#/components/schemas/NotificationId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        parcelId:
+          $ref: "#/components/schemas/ParcelId"
+        title:
+          type: string
+        message:
+          type: string
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        readAt:
+          $ref: "#/components/schemas/Timestamp"
+        inAppAvailable:
+          type: boolean
+        externalDelivery:
+          type: string
+          enum:
+            - PENDING
+            - ACCEPTED
+            - DELIVERED
+            - FAILED
+        simulatedExternal:
+          type: boolean
+    IssueInput:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+        - replace
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 100
+        replace:
+          type: boolean
+    QrPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - v
+        - credentialRef
+        - token
+      properties:
+        v:
+          type: integer
+          enum:
+            - 1
+        credentialRef:
+          $ref: "#/components/schemas/CredentialId"
+        token:
+          type: string
+          minLength: 16
+    Credential:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - parcelId
+        - otp
+        - qr
+        - issuedAt
+        - expiresAt
+      properties:
+        id:
+          $ref: "#/components/schemas/CredentialId"
+        parcelId:
+          $ref: "#/components/schemas/ParcelId"
+        otp:
+          type: string
+          pattern: ^[0-9]{6}$
+        qr:
+          $ref: "#/components/schemas/QrPayload"
+        issuedAt:
+          $ref: "#/components/schemas/Timestamp"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+    VerifyInput:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+      properties:
+        method:
+          type: string
+          enum:
+            - OTP
+            - QR
+        otp:
+          type: string
+          pattern: ^[0-9]{6}$
+        qr:
+          $ref: "#/components/schemas/QrPayload"
+      description: method OTP requires otp and no qr; method QR requires qr and no otp. Extra secret
+        fields are not accepted by a future HTTP adapter. Mock validates the selected method.
+    Verification:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - parcelId
+        - credentialId
+        - parcelRevision
+        - expiresAt
+        - student
+        - parcel
+      properties:
+        id:
+          $ref: "#/components/schemas/VerificationId"
+        parcelId:
+          $ref: "#/components/schemas/ParcelId"
+        credentialId:
+          $ref: "#/components/schemas/CredentialId"
+        parcelRevision:
+          type: integer
+          minimum: 1
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+        student:
+          $ref: "#/components/schemas/Profile"
+        parcel:
+          $ref: "#/components/schemas/Parcel"
+    ConfirmInput:
+      type: object
+      additionalProperties: false
+      required:
+        - verificationId
+        - physicalHandoverConfirmed
+        - idempotencyKey
+      properties:
+        verificationId:
+          $ref: "#/components/schemas/VerificationId"
+        physicalHandoverConfirmed:
+          type: boolean
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 100
+    Receipt:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - parcelId
+        - orderId
+        - studentId
+        - staffId
+        - confirmedAt
+        - storageLocation
+        - verificationId
+      properties:
+        id:
+          $ref: "#/components/schemas/ReceiptId"
+        parcelId:
+          $ref: "#/components/schemas/ParcelId"
+        orderId:
+          $ref: "#/components/schemas/OrderId"
+        studentId:
+          $ref: "#/components/schemas/UserId"
+        staffId:
+          $ref: "#/components/schemas/UserId"
+        confirmedAt:
+          $ref: "#/components/schemas/Timestamp"
+        storageLocation:
+          type: string
+        verificationId:
+          $ref: "#/components/schemas/VerificationId"
+    Confirmation:
+      type: object
+      additionalProperties: false
+      required:
+        - receipt
+        - replayed
+      properties:
+        receipt:
+          $ref: "#/components/schemas/Receipt"
+        replayed:
+          type: boolean
+    Guide:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - title
+        - steps
+        - caution
+      properties:
+        platform:
+          $ref: "#/components/schemas/Platform"
+        title:
+          type: string
+        steps:
+          type: array
+          items:
+            type: string
+        caution:
+          type: string
+    OrderPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExpectedOrder"
+        nextCursor:
+          type: string
+    ParcelPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Parcel"
+        nextCursor:
+          type: string
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        nextCursor:
+          type: string
+    ReceiptPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Receipt"
+        nextCursor:
+          type: string
+  responses:
+    Error:
+      description: "Error envelope. HTTP mapping: 400 validation; 401 authentication/session; 403 role;
+        404 resource absent or not owned; 409 duplicate, lifecycle, revision, idempotency or
+        concurrent conflict; 410 expired credential/verification; 423 collection hold; 429 five
+        failed OTP attempts; 503 network/persistence. Operation descriptions define specific codes."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"

@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+test-results/
+playwright-report/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+.scratch/
+.reference-*.png
+Diagrams and architectures/
