@@ -30,7 +30,25 @@ export function candidate(p: P, o: O, orders: O[]): S<'Candidate'> {
 export function fingerprint(p: P, orders: O[], parcels: P[]) {
   const linked = orders.find(o => o.id === p.orderId), related = [...p.identifiers, ...(linked ? refs(linked) : [])];
   const peers = parcels.filter(other => other.id !== p.id && p.identifiers.some(a => a.kind === 'TRACKING' && other.identifiers.some(b => b.kind === 'TRACKING' && same(a, b))));
-  return { peers, value: digest(canonical([peers.map(other => ({ id: other.id, identifiers: other.identifiers.map(i => [i.kind, i.namespace, i.value]) })).sort((a, b) => a.id.localeCompare(b.id)), orders.filter(o => o.status !== 'CANCELLED' && (o.id === p.orderId || refs(o).some(a => related.some(b => same(a, b))))).map(o => ({ id: o.id, references: refs(o), duplicate: duplicate(o, orders) })).sort((a, b) => a.id.localeCompare(b.id))])) };
+  const stableReferences = (references: { kind: string; namespace: string; value: string }[]) => references.map(i => [i.kind, i.namespace, i.value]).sort((a, b) => canonical(a).localeCompare(canonical(b)));
+  const claims = orders.filter(o => o.status !== 'CANCELLED');
+  const relevant = claims.filter(o => o.id === p.orderId || refs(o).some(a => related.some(b => same(a, b))));
+  const legacyValue = digest(canonical([peers.map(other => ({ id: other.id, identifiers: other.identifiers.map(i => [i.kind, i.namespace, i.value]) })).sort((a, b) => a.id.localeCompare(b.id)), relevant.map(o => ({ id: o.id, references: refs(o), duplicate: duplicate(o, orders) })).sort((a, b) => a.id.localeCompare(b.id))]));
+  return { peers, legacyValue, value: 'e2:' + digest(canonical([peers.map(other => ({ id: other.id, identifiers: stableReferences(other.identifiers) })).sort((a, b) => a.id.localeCompare(b.id)), relevant.map(o => ({ id: o.id, references: stableReferences(refs(o)), recipient: [o.studentId, o.student.email, o.student.studentNumber], competingClaims: claims.filter(other => other.id !== o.id && refs(o).some(a => refs(other).some(b => same(a, b)))).map(other => ({ id: other.id, references: stableReferences(refs(other)) })).sort((a, b) => a.id.localeCompare(b.id)) })).sort((a, b) => a.id.localeCompare(b.id))])) };
+}
+/** Migrate retained baselines before a mutation can introduce new evidence.
+ * Equivalent legacy reviewed decisions stay valid; closed history is untouched.
+ */
+export async function establishEvidenceBaselines(tx: Tx) {
+  const legacy = await tx.parcel.findMany({ where: { status: { not: 'CLOSED' }, OR: [{ observedFingerprint: null }, { observedFingerprint: { not: { startsWith: 'e2:' } } }, { reviewedFingerprint: { not: { startsWith: 'e2:' } } }] }, include: parcelInclude });
+  if (!legacy.length) return;
+  const orders = await tx.expectedOrder.findMany({ include: orderInclude }), parcels = await tx.parcel.findMany({ include: parcelInclude });
+  for (const p of legacy) {
+    const f = fingerprint(p, orders, parcels), data: { observedFingerprint?: string; reviewedFingerprint?: string } = {};
+    if (p.observedFingerprint === null || p.observedFingerprint === f.legacyValue) data.observedFingerprint = f.value;
+    if (p.reviewedFingerprint === f.legacyValue) data.reviewedFingerprint = f.value;
+    if (Object.keys(data).length) await tx.parcel.update({ where: { id: p.id }, data });
+  }
 }
 export async function assign(tx: Tx, p: P, o: O, actor: string, reason: string, now: Date) {
   await revoke(tx, p);
@@ -54,7 +72,9 @@ export async function recheck(tx: Tx, actor: string, now: Date) {
     else if (first.c.conflicts.length || p.orderId && p.orderId !== first.o.id) { outcome = 'CONFLICT'; explanation = first.c.conflicts.join(' ') || 'A new claim contradicts the reviewed assignment.'; }
     else if (!first.c.corroborated || first.o.platform === 'OTHER' || !p.identifiers.some(a => a.namespace !== 'OTHER' && refs(first.o).some(b => same(a, b)))) { outcome = 'INSUFFICIENT_EVIDENCE'; explanation = 'Independent profile corroboration and approved comparable reference required. OTHER requires review.'; }
     else { if (!p.orderId) await assign(tx, p, first.o, actor, 'Unique comparable identifier with independent profile corroboration and no contradictions.', now); continue; }
-    await tx.parcel.update({ where: { id: p.id }, data: { matchOutcome: outcome, matchExplanation: explanation, ...(p.orderId ? { hold: 'DISPUTE', holdReason: explanation, observedFingerprint: f.value, revision: { increment: 1 } } : { status: 'AWAITING_MATCH', ...(f.peers.length ? { hold: 'REVIEW', holdReason: explanation } : {}) }) } });
+    const evidenceChanged = p.observedFingerprint !== null && p.observedFingerprint !== f.value;
+    await tx.parcel.update({ where: { id: p.id }, data: { matchOutcome: outcome, matchExplanation: explanation, observedFingerprint: f.value, ...(p.orderId ? { hold: 'DISPUTE', holdReason: explanation, revision: { increment: 1 } } : { status: 'AWAITING_MATCH', ...(evidenceChanged ? { revision: { increment: 1 } } : {}), ...(f.peers.length ? { hold: 'REVIEW', holdReason: explanation } : {}) }) } });
+    if (!p.orderId && evidenceChanged) await audit(tx, p.id, actor, 'MATCHING_EVIDENCE_CHANGED', 'Relevant matching evidence changed; obtain a fresh review before reconciliation.', now);
     if (p.orderId) {
       await revoke(tx, p); await audit(tx, p.id, actor, 'DISPUTE_HOLD', explanation, now);
       await notify(tx, p, 'Collection paused for review', 'Collection is paused pending mailroom review.', `hold:${p.id}:${p.revision + 1}`, now);

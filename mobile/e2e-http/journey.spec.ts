@@ -78,3 +78,28 @@ test('actual committed response loss recovers after real verification expiry, AP
   const record = (await sql('SELECT key FROM "Idempotency" WHERE operation=$1', ['confirmHandover']))[0]; expect(record.key).toBe(original!.idempotencyKey);
   const keys = await page.evaluate(() => Object.keys(localStorage)); expect(keys.some(k => k.includes(encodeURIComponent('http:http://127.0.0.1:3100/v1')) && k.endsWith(':' + staffId))).toBe(true);
 });
+test('expired ordinary recovery inspects PostgreSQL records without POST and requires an explicit separately reviewed operation', async ({ page }) => {
+  const ashaId = (await sql('SELECT id FROM "User" WHERE "studentNumber"=$1', ['DEMO1001']))[0].id;
+  await page.goto('/'); await login(page, 'asha'); await page.getByRole('button', { name: 'Register an expected order', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Merchant order ID', exact: true }).fill('AMZ-EXPIRED-ORIGINAL');
+  await page.route('**/v1/orders', async route => { if (route.request().method() !== 'POST') return route.continue(); const response = await route.fetch(); expect(response.status()).toBe(200); await route.abort('failed'); });
+  await page.getByRole('button', { name: 'Create expected order', exact: true }).click(); await expect(page.getByRole('alert')).toContainText('NETWORK');
+  expect((await sql('SELECT count(*)::text AS count FROM "ExpectedOrder"'))[0].count).toBe('1'); await page.unroute('**/v1/orders');
+  const original = await page.evaluate(account => {
+    const key = Object.keys(localStorage).find(k => k.startsWith('smart-mailroom-http-writes-v1:') && k.endsWith(':' + account))!;
+    const records = JSON.parse(localStorage.getItem(key)!); records[0].createdAt = new Date(Date.now() - 86_400_001).toISOString(); localStorage.setItem(key, JSON.stringify(records)); return records[0];
+  }, ashaId);
+  let posted = 0; page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/v1/orders') posted++; });
+  await page.reload(); await login(page, 'asha'); await expect(page.getByRole('heading', { name: 'Recovery protection expired', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Recover original createOrder', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Inspect existing records for createOrder', exact: true }).click();
+  await expect(page.getByText('Read-only current server records. Compare identifiers and physical references.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retain original and review new createOrder', exact: true })).toBeDisabled(); expect(posted).toBe(0);
+  await page.getByRole('checkbox', { name: 'I inspected the original request and current records and will explicitly review a separate new operation', exact: true }).click(); await page.getByRole('button', { name: 'Retain original and review new createOrder', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Register an order', exact: true })).toBeVisible(); expect(posted).toBe(0);
+  await page.getByRole('textbox', { name: 'Merchant order ID', exact: true }).fill('AMZ-EXPLICITLY-REVIEWED-NEW'); await page.getByRole('button', { name: 'Create expected order', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Order details', exact: true })).toBeVisible(); expect(posted).toBe(1);
+  expect((await sql('SELECT count(*)::text AS count FROM "ExpectedOrder"'))[0].count).toBe('2');
+  const archived = await page.evaluate(account => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('smart-mailroom-http-writes-v1:') && k.endsWith(':' + account))!)!), ashaId);
+  expect(archived).toHaveLength(1); expect(archived[0].request).toEqual(original.request); expect(archived[0].createdAt).toBe(original.createdAt); expect(archived[0].reviewedAt).toBeDefined();
+});

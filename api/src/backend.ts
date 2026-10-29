@@ -6,17 +6,17 @@ import { CommittedFailure, DomainError, fail } from './errors.js';
 import { type Input, type Output, type S } from './contract.js';
 import { digest, id, passwordHash, passwordValid, token } from './security.js';
 import { type Context, nonblank, ownedParcel, page, rate, remember, replay, revision, search, sorted, staff, student } from './context.js';
-import { candidate, duplicate, fingerprint, assign, audit, notify, recheck, revoke } from './matching.js';
+import { candidate, duplicate, fingerprint, assign, audit, notify, recheck, revoke, establishEvidenceBaselines } from './matching.js';
 import { identifier, same, upper } from './identifiers.js';
 import { order, orderInclude, parcel, parcelInclude, profile, receipt, staffParcel, staffReceipt } from './projections.js';
 import { Credentials } from './credentials.js';
 import { reset } from './seed.js';
 import { guide } from './guides.js';
 type Handlers = { [K in keyof operations]: (input: Input<K>) => Promise<Output<K> | CommittedFailure> };
-export type BackendOptions = { now?: () => Date; afterHandover?: () => Promise<void> };
+export type BackendOptions = { now?: () => Date; afterHandover?: () => Promise<void>; otpGenerator?: () => string };
 export class Backend {
   readonly credentials: Credentials;
-  constructor(readonly db: PrismaClient, readonly config: Config, readonly options: BackendOptions = {}) { this.credentials = new Credentials(config.pepper, options.afterHandover); }
+  constructor(readonly db: PrismaClient, readonly config: Config, readonly options: BackendOptions = {}) { this.credentials = new Credentials(config.pepper, options.afterHandover, options.otpGenerator); }
   async execute(operation: keyof operations, input: unknown, bearer = '', ip = 'local') {
     if (operation === 'getGuide') return guide(input as Input<'getGuide'>);
     const result = await transaction(this.db, async tx => {
@@ -41,6 +41,7 @@ export class Backend {
       if (!session || session.revokedAt) fail('UNAUTHENTICATED', 'Sign in to a provisioned account.');
       if (session.expiresAt <= now) fail('SESSION_EXPIRED', 'Your demonstration session expired. Sign in again.');
       const c: Context = { tx, session, user: session.user, now };
+      await establishEvidenceBaselines(tx);
       const allOrders = () => tx.expectedOrder.findMany({ include: orderInclude });
       const ownedOrder = async (orderId: string) => { student(c); const o = await tx.expectedOrder.findUnique({ where: { id: orderId }, include: orderInclude }); if (!o || o.studentId !== c.user.id) fail('NOT_FOUND', 'Order not found.'); return o; };
       const orderResponse = async (orderId: string) => { const orders = await allOrders(); const o = orders.find(o => o.id === orderId)!; return order(o, duplicate(o, orders)); };

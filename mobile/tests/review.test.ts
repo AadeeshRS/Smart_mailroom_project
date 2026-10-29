@@ -40,7 +40,7 @@ describe('review: confirmation recovery', () => {
     expect(await store.list('usr_other_staff')).toEqual([]);
     const persisted = f.storage.values.get('smart-mailroom-confirmation-recovery-v1:usr_staff')!;
     expect(persisted).not.toContain(c.otp); expect(persisted).not.toContain(c.qr.token); expect(persisted).not.toContain('demo-session');
-    f.advance(180_000);
+    f.advance(86_400_001);
     const restarted = createMockKernel(f.storage, f.now).client(); await restarted.login({ accountId: 'usr_staff', passcode: DEMO_PASSCODE });
     const freshStore = new ConfirmationRecoveryStore(f.storage); const original = (await freshStore.get('usr_staff', p.id))!;
     const result = await confirmWithRecovery(freshStore, restarted, 'usr_staff', original.request);

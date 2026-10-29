@@ -10,6 +10,8 @@ import type { operations } from '../../contracts/generated/api.js';
 import { id } from '../src/security.js';
 import { reset, seed } from '../src/seed.js';
 import { deliveryResult, processOutbox } from '../src/outbox.js';
+import { fingerprint } from '../src/matching.js';
+import { orderInclude, parcelInclude } from '../src/projections.js';
 const settings = config(); dedicatedDataset(settings.databaseUrl);
 assert.equal(new URL(settings.databaseUrl).pathname, '/smart_mailroom_test', 'Tests must use the isolated project TEST database.');
 const db = database(settings.databaseUrl); let time = Date.now(); let rollback = false;
@@ -151,10 +153,11 @@ test('PostgreSQL: simultaneous SAME-key retries replay one permanent result', as
   assert.equal(await db.handover.count(), 1); assert.equal(await db.idempotency.count({ where: { operation: 'confirmHandover' } }), 1);
   await call('confirmHandover', { ...request, physicalHandoverConfirmed: false }, staff, 409);
 });
-test('PostgreSQL: lost outcome replays after expiry, fresh server state and staff logout/login; uncommitted expiry rejects', async () => {
+test('PostgreSQL: permanent lost-outcome replay survives 24 hours, server state restart and staff logout/login; uncommitted expiry rejects', async () => {
   const { p, v } = await ready(), request = confirm(p.id, v.id); await call('confirmHandover', request, staff); // response intentionally discarded
-  time += 121_000; await call('logout', {}, staff); await runtime.app.close();
+  await call('logout', {}, staff); time += 86_400_001; await runtime.app.close();
   runtime = await createApp(db, settings, { now: () => new Date(time) }); staff = await login(staff.accountId);
+  a = await login(a.accountId);
   const recovered = await call('confirmHandover', request, staff); assert.equal(recovered.replayed, true); assert.equal(await db.handover.count(), 1);
   const newP = await call('intakeParcel', intake(), staff), code = await call('issueCredential', issue(newP.id), a), verification = await call('verifyCredential', { parcelId: newP.id, method: 'QR', qr: code.qr }, staff);
   time += 121_000; await call('confirmHandover', confirm(newP.id, verification.id), staff, 410); assert.equal(await db.handover.count(), 1);
@@ -228,4 +231,69 @@ test('PostgreSQL: 24-hour ordinary write expiry applies current uniqueness and s
   await call('intakeParcel', { ...intake(), recipientStudentNumber: 'x'.repeat(41) }, staff, 400);
   await call('intakeParcel', { ...intake(), identifiers: Array.from({ length: 21 }, () => tracking()) }, staff, 400);
   assert.equal(await db.parcel.count(), 0);
+});
+test('PostgreSQL closeout: relevant conflicting evidence invalidates an unassigned review; unrelated orders do not', async () => {
+  const target = await call('createOrder', order('MANUAL-TARGET'), a);
+  const p = await call('intakeParcel', intake('LATE-CONFLICT'), staff);
+  const review = await call('getReview', { parcelId: p.id }, staff);
+  await call('createOrder', order('UNRELATED'), a);
+  assert.equal((await call('getReview', { parcelId: p.id }, staff)).parcel.revision, review.parcel.revision);
+  await call('createOrder', order('LATE-CONFLICT'), b);
+  const changed = await call('getReview', { parcelId: p.id }, staff);
+  assert.equal(changed.parcel.matchOutcome, 'CONFLICT'); assert.equal(changed.parcel.studentId, undefined); assert.ok(changed.parcel.revision > review.parcel.revision);
+  const decision: Input<'reconcileParcel'> = { parcelId: p.id, orderId: target.id, expectedRevision: review.parcel.revision, identifierReviewed: true, recipientVerified: true, conflictsResolved: true, reason: 'Physical label and independent recipient evidence reviewed.', idempotencyKey: id('key') };
+  const rejected = await call('reconcileParcel', decision, staff, 409);
+  assert.equal((rejected as unknown as { error: { code: string } }).error.code, 'REVISION_CHANGED');
+  assert.equal(await db.decision.count(), 0); assert.equal((await db.parcel.findUniqueOrThrow({ where: { id: p.id } })).studentId, null);
+  assert.equal(await db.auditEvent.count({ where: { parcelId: p.id, action: 'EVIDENCE_REVIEWED' } }), 0);
+  assert.equal(await db.idempotency.count({ where: { operation: 'reconcileParcel' } }), 0);
+  const resolved = await call('reconcileParcel', { ...decision, expectedRevision: changed.parcel.revision, idempotencyKey: id('key'), reason: 'Fresh review resolved the new conflicting claim using physical and recipient evidence.' }, staff);
+  assert.equal(resolved.orderId, target.id); assert.equal(resolved.collectionEligible, true); assert.equal(await db.decision.count(), 1);
+  // A retained legacy decision must not be invalidated merely by upgrading its hash format.
+  const stored = await db.parcel.findUniqueOrThrow({ where: { id: p.id }, include: parcelInclude });
+  const legacy = fingerprint(stored, await db.expectedOrder.findMany({ include: orderInclude }), await db.parcel.findMany({ include: parcelInclude })).legacyValue;
+  await db.parcel.update({ where: { id: p.id }, data: { reviewedFingerprint: legacy, observedFingerprint: legacy } });
+  await call('createOrder', order('ANOTHER-UNRELATED'), a);
+  const preserved = await call('getStaffParcel', { parcelId: p.id }, staff); assert.equal(preserved.hold, 'NONE'); assert.equal(preserved.revision, resolved.revision);
+  assert.match((await db.parcel.findUniqueOrThrow({ where: { id: p.id } })).reviewedFingerprint!, /^e2:/);
+});
+test('PostgreSQL closeout: unassigned ambiguity and tracking-collision membership changes advance revision once per relevant change', async () => {
+  await call('createOrder', order(), a); await call('createOrder', order(), b);
+  const label = intake(); const p = await call('intakeParcel', { ...label, identifiers: [...label.identifiers, tracking('SHARED')] }, staff), original = await call('getReview', { parcelId: p.id }, staff);
+  assert.equal(p.matchOutcome, 'AMBIGUOUS');
+  await call('createOrder', { ...order('THIRD-CLAIM'), tracking: [tracking('SHARED')] }, a);
+  const thirdReview = await call('getReview', { parcelId: p.id }, staff);
+  assert.equal(thirdReview.parcel.matchOutcome, 'AMBIGUOUS'); assert.equal(thirdReview.parcel.revision, original.parcel.revision + 1);
+  await call('createOrder', order('UNRELATED-CLAIM'), a);
+  assert.equal((await call('getReview', { parcelId: p.id }, staff)).parcel.revision, thirdReview.parcel.revision);
+  const collision = await call('intakeParcel', { ...intake(), identifiers: [tracking('REUSED')] }, staff);
+  const before = await call('getReview', { parcelId: collision.id }, staff);
+  await call('intakeParcel', { ...intake(), identifiers: [tracking('REUSED')] }, staff);
+  const second = await call('getReview', { parcelId: collision.id }, staff); assert.equal(second.parcel.matchOutcome, 'TRACKING_COLLISION'); assert.equal(second.parcel.revision, before.parcel.revision + 1);
+  await call('intakeParcel', { ...intake(), identifiers: [tracking('REUSED')] }, staff);
+  const next = await call('getReview', { parcelId: collision.id }, staff); assert.equal(next.parcel.revision, second.parcel.revision + 1);
+  await call('createOrder', order('NOT-RELEVANT'), a); assert.equal((await call('getReview', { parcelId: collision.id }, staff)).parcel.revision, next.parcel.revision);
+  assert.equal(await db.decision.count(), 0); assert.equal((await db.parcel.findUniqueOrThrow({ where: { id: collision.id } })).studentId, null);
+});
+test('PostgreSQL closeout: forced old OTP proposals are rejected against protected history; exhaustion preserves the current credential', async () => {
+  let proposals: string[] = []; let generated = 0;
+  await runtime.app.close(); runtime = await createApp(db, settings, { now: () => new Date(time), otpGenerator: () => { generated++; const value = proposals.shift(); assert.ok(value, 'test must explicitly supply each proposal'); return value; } });
+  await call('createOrder', order(), a); const p = await call('intakeParcel', intake(), staff);
+  proposals = ['012345']; const first = await call('issueCredential', issue(p.id), a);
+  proposals = [first.otp, '678901']; const second = await call('issueCredential', issue(p.id, true), a); assert.equal(second.otp, '678901');
+  proposals = [first.otp, second.otp, '234567']; const current = await call('issueCredential', issue(p.id, true), a); assert.equal(current.otp, '234567');
+  for (const code of [first.otp, second.otp]) await call('verifyCredential', { parcelId: p.id, method: 'OTP', otp: code }, staff, 409);
+  await call('verifyCredential', { parcelId: p.id, method: 'OTP', otp: current.otp }, staff);
+  assert.equal((await db.credential.findUniqueOrThrow({ where: { id: first.id } })).state, 'INVALIDATED');
+  proposals = Array(32).fill(current.otp); const before = generated;
+  await call('issueCredential', issue(p.id, true), a, 503); assert.equal(generated - before, 32);
+  assert.equal(await db.credential.count(), 3); assert.equal(await db.credential.count({ where: { parcelId: p.id, state: 'ACTIVE' } }), 1);
+  assert.equal((await db.credential.findUniqueOrThrow({ where: { id: current.id } })).state, 'ACTIVE');
+  await call('verifyCredential', { parcelId: p.id, method: 'OTP', otp: current.otp }, staff);
+  time += 600_001; proposals = [current.otp, '345678']; const afterExpiry = await call('issueCredential', issue(p.id, true), a); assert.equal(afterExpiry.otp, '345678');
+  await call('verifyCredential', { parcelId: p.id, method: 'OTP', otp: current.otp }, staff, 409);
+  await call('verifyCredential', { parcelId: p.id, method: 'OTP', otp: afterExpiry.otp }, staff);
+  await call('issueCredential', { ...issue(p.id, true), otp: '999999' } as never, a, 400);
+  assert.equal(await db.credential.count(), 4); assert.equal(generated, 40);
+  const serialized = JSON.stringify(await db.credential.findMany()); assert.equal(serialized.includes('"otp":'), false); assert.equal(serialized.includes('"qr":'), false);
 });

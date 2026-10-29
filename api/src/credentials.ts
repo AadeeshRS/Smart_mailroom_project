@@ -9,7 +9,8 @@ import { profile, staffParcel, staffReceipt, type P } from './projections.js';
 export class Credentials {
   // Deliberately not durable: process loss/session change/expiry => explicit replacement.
   private secrets = new Map<string, { sessionId: string; value: S<'Credential'> }>();
-  constructor(private pepper: string, private afterHandover?: () => Promise<void>) {}
+  // In-process test dependency only; no HTTP/configuration OTP selector exists.
+  constructor(private pepper: string, private afterHandover?: () => Promise<void>, private nextOtp: () => string = otp) {}
   expire(now: Date) { for (const [key, record] of this.secrets) if (Date.parse(record.value.expiresAt) <= +now) this.secrets.delete(key); }
   forgetSession(sessionId: string) { for (const [key, record] of this.secrets) if (record.sessionId === sessionId) this.secrets.delete(key); }
   clear() { this.secrets.clear(); }
@@ -32,7 +33,18 @@ export class Credentials {
     if (!await rate(c.tx, `issue:${c.user.id}:${p.id}`, 6, c.now)) return new CommittedFailure(new DomainError('VALIDATION', 'Credential issuance rate limit reached. Retry after one minute.', true));
     if (p.credentials[0]?.state === 'ACTIVE' && p.credentials[0].expiresAt > c.now && !input.replace) fail('CREDENTIAL_ACTIVE', 'A current credential exists. Explicitly replace it.');
     if (p.credentialState !== 'NONE' && !input.replace) fail('CREDENTIAL_INVALIDATED', 'Explicit replacement requires replace=true and a new key.');
-    await revoke(c.tx, p); const ref = id('crd'), code = otp(), qrToken = token();
+    const latest = await c.tx.credential.findFirst({ where: { parcelId: p.id }, orderBy: { issuedAt: 'desc' }, select: { issuedAt: true } });
+    // Include revoked unexpired codes and the latest credential even after expiry.
+    // Timestamp ties are included conservatively; random IDs are not issuance order.
+    const history = await c.tx.credential.findMany({ where: { parcelId: p.id, OR: [{ expiresAt: { gt: c.now } }, ...(latest ? [{ issuedAt: latest.issuedAt }] : [])] }, select: { id: true, otpDigest: true } });
+    let code: string | undefined;
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const proposal = this.nextOtp();
+      if (!/^\d{6}$/.test(proposal)) throw new Error('OTP generator must return a six-digit string.');
+      if (!history.some(old => equal(secretDigest(this.pepper, old.id, 'otp', proposal), old.otpDigest))) { code = proposal; break; }
+    }
+    if (code === undefined) return new CommittedFailure(new DomainError('PERSISTENCE', 'Could not allocate a fresh collection credential. Retry the same issuance request.', true));
+    await revoke(c.tx, p); const ref = id('crd'), qrToken = token();
     const value: S<'Credential'> = { id: ref, parcelId: p.id, otp: code, qr: { v: 1, credentialRef: ref, token: qrToken }, issuedAt: c.now.toISOString(), expiresAt: new Date(+c.now + 600_000).toISOString() };
     await c.tx.credential.create({ data: { id: ref, parcelId: p.id, sessionId: c.session.id, otpDigest: secretDigest(this.pepper, ref, 'otp', code), qrDigest: secretDigest(this.pepper, ref, 'qr', qrToken), issuedAt: c.now, expiresAt: new Date(value.expiresAt) } });
     await c.tx.parcel.update({ where: { id: p.id }, data: { credentialState: 'ACTIVE' } });
