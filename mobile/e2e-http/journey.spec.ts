@@ -52,6 +52,9 @@ test('actual HTTP/PostgreSQL student-to-staff journey persists handover, read st
   await expect(page.getByRole('button', { name: 'Confirm handover and save receipt', exact: true })).toBeDisabled();
   await page.getByRole('checkbox', { name: 'I checked the student and parcel details and physically handed over this exact parcel', exact: true }).click(); await page.getByRole('button', { name: 'Confirm handover and save receipt', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Physical handover recorded', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Handover saved', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Handover saved', { exact: true })).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: test.info().outputPath('handover.png'), fullPage: true, animations: 'disabled' });
   const receiptId = new URL(page.url()).pathname.split('/').at(-1)!;
   expect((await sql('SELECT count(*)::text AS count FROM "Handover" WHERE "parcelId"=$1', [parcelId]))[0].count).toBe('1'); expect((await sql('SELECT status FROM "Parcel" WHERE id=$1', [parcelId]))[0].status).toBe('CLOSED');
   await page.reload(); await login(page, 'staff'); await page.getByRole('tab', { name: /Parcels/ }).click(); await page.getByRole('textbox', { name: 'Search parcels', exact: true }).fill(parcelId); await page.getByRole('radio', { name: 'Closed', exact: true }).click(); await page.getByRole('button', { name: `View parcel ${parcelId}`, exact: true }).click(); await page.getByRole('button', { name: 'View retained handover receipt', exact: true }).click();

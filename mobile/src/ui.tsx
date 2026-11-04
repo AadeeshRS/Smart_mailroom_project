@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRuntime } from './runtime';
+import { useEntrance, usePressScale } from './motion';
 
 export const colors = { ink: '#142D38', muted: '#526974', teal: '#006B5B', pale: '#E3F1EB', paper: '#F5F6F2', white: '#FFFFFF', line: '#D8E2DE', amber: '#825112', amberPale: '#FFF2D8', red: '#A02D36', redPale: '#FCECEF' };
 export const styles = StyleSheet.create({
@@ -25,12 +26,13 @@ export function DemoBanner() {
 }
 export function Page({ title, subtitle, children, back, modal = false }: { title: string; subtitle?: string; children: React.ReactNode; back?: () => void; modal?: boolean }) {
   const { online, toggleOnline } = useRuntime();
+  const entrance = useEntrance(title);
   return <SafeAreaView style={styles.page} edges={modal ? ['top', 'left', 'right'] : ['left', 'right']}>
     {modal && <DemoBanner />}
     {!online && <Pressable accessibilityRole="button" onPress={toggleOnline} style={{ padding: 12, backgroundColor: colors.amberPale }}><Text style={styles.text}>Simulated offline · Tap to reconnect</Text></Pressable>}
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, minHeight: 0 }}><ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       {back && <Button label="‹ Back" variant="quiet" onPress={back} />}
-      <View style={{ gap: 8 }}><Text style={styles.eyebrow}>SMART MAILROOM</Text><Text accessibilityRole="header" style={styles.title}>{title}</Text>{subtitle && <Text style={styles.muted}>{subtitle}</Text>}</View>
+      <Animated.View testID="page-heading-motion" style={{ gap: 8, opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}><Text style={styles.eyebrow}>SMART MAILROOM</Text><Text accessibilityRole="header" style={styles.title}>{title}</Text>{!!subtitle && <Text style={styles.muted}>{subtitle}</Text>}</Animated.View>
       {children}
     </ScrollView></KeyboardAvoidingView>
   </SafeAreaView>;
@@ -41,12 +43,17 @@ export const Body = ({ children }: { children: React.ReactNode }) => <Text style
 export const Muted = ({ children }: { children: React.ReactNode }) => <Text style={styles.muted}>{children}</Text>;
 export function Button({ label, onPress, disabled, busy, variant = 'primary' }: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; variant?: 'primary' | 'quiet' | 'danger' }) {
   const quiet = variant === 'quiet';
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [styles.button, quiet && { backgroundColor: colors.pale }, variant === 'danger' && { backgroundColor: colors.red }, { opacity: disabled || busy ? 0.55 : pressed ? 0.8 : 1 }]}>
+  const { scale, onPressIn, onPressOut } = usePressScale();
+  return <Animated.View style={{ transform: [{ scale }] }}><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={({ pressed }) => [styles.button, quiet && { backgroundColor: colors.pale }, variant === 'danger' && { backgroundColor: colors.red }, { opacity: disabled || busy ? 0.55 : pressed ? 0.8 : 1 }]}>
     {busy ? <ActivityIndicator color={quiet ? colors.teal : colors.white} accessibilityLabel="Working" /> : <Text style={[styles.buttonText, quiet && { color: colors.teal }]}>{label}</Text>}
-  </Pressable>;
+  </Pressable></Animated.View>;
+}
+export function SuccessMark() {
+  const entrance = useEntrance();
+  return <Animated.View accessibilityRole="image" accessibilityLabel="Handover saved" style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.pale, alignItems: 'center', justifyContent: 'center', opacity: entrance, transform: [{ scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }] }}><Text style={{ color: colors.teal, fontSize: 30, fontWeight: '800' }}>✓</Text></Animated.View>;
 }
 export function Field({ label, hint, ...props }: TextInputProps & { label: string; hint?: string }) {
-  return <View style={{ gap: 7 }}><Text style={{ ...styles.text, fontWeight: '600' }}>{label}</Text><TextInput accessibilityLabel={label} placeholderTextColor="#667D84" autoCorrect={false} style={styles.input} {...props} />{hint && <Muted>{hint}</Muted>}</View>;
+  return <View style={{ gap: 7 }}><Text style={{ ...styles.text, fontWeight: '600' }}>{label}</Text><TextInput accessibilityLabel={label} placeholderTextColor="#667D84" autoCorrect={false} style={styles.input} {...props} />{!!hint && <Muted>{hint}</Muted>}</View>;
 }
 export const human = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/^./, s => s.toUpperCase());
 export function Tag({ value }: { value: string }) {

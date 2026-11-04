@@ -57,7 +57,7 @@ export function ParcelCard({ parcel }: { parcel: Schema<'Parcel'> }) {
   return <Card><View style={styles.spread}><Muted>{parcel.id}</Muted><Tag value={parcel.status} /></View><Heading>{parcel.description}</Heading><Body>Storage · {parcel.storageLocation}</Body>{parcel.hold !== 'NONE' && <Notice>Collection hold: {parcel.holdReason}</Notice>}<Muted>{parcel.collectionEligible ? 'Ready to request a collection code' : parcel.status === 'CLOSED' ? 'Collected · receipt retained' : parcel.matchExplanation}</Muted><Button label={`View parcel ${parcel.id}`} variant="quiet" onPress={() => router.push(`/parcel/${parcel.id}`)} /></Card>;
 }
 export function Pagination({ cursor, next, setCursor }: { cursor?: string; next?: string; setCursor: (value: string | undefined) => void }) {
-  return <View style={styles.row}>{cursor && <Button label="First page" variant="quiet" onPress={() => setCursor(undefined)} />}{next && <Button label="Next page" variant="quiet" onPress={() => setCursor(next)} />}</View>;
+  return <View style={styles.row}>{!!cursor && <Button label="First page" variant="quiet" onPress={() => setCursor(undefined)} />}{!!next && <Button label="Next page" variant="quiet" onPress={() => setCursor(next)} />}</View>;
 }
 export function ParcelsScreen() {
   const { api, session } = useRuntime(); const staff = session?.profile.role === 'STAFF';

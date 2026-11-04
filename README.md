@@ -121,6 +121,8 @@ npm.cmd run lint
 npm.cmd test
 node node_modules/playwright/cli.js install chromium
 node node_modules/playwright/cli.js test --config playwright.http.config.ts
+# Development renderer: empty-text warning regression and reduced-motion behavior.
+node node_modules/playwright/cli.js test --config playwright.dev.config.ts
 # Separate local mock regression suite; clear configuration cache before exporting.
 $env:EXPO_PUBLIC_API_MODE='mock'
 node node_modules/expo/bin/cli export --clear --platform web --max-workers 2
@@ -130,6 +132,8 @@ npx.cmd expo install --check
 ```
 
 Run database tests and HTTP browser tests sequentially: both intentionally reset the isolated test dataset. The HTTP browser supervisor binds loopback ports 3100/3101 and web port 8082; its restart control is test-only and absent from the API application. The recovery browser test waits past real verification expiry, restarts the actual API child process, reloads the browser, and asserts one original PostgreSQL receipt/key. Mock browser tests use port 8081. Logs, traces, screenshots and exports are ignored. Physical camera decoding and native device execution remain **NOT TESTED**; exports validate JavaScript bundling only. Real SSO, real providers, production deployment and security/scale review remain outside this task.
+
+The development browser suite uses the isolated test database, API port 3100 and Metro port 8083. Run it after the other database/browser suites. It checks React Native's development-only empty-text warnings on login and forms, button press feedback, and live reduced-motion preference changes. Short heading entrances and a saved-handover checkmark use the built-in Animated API; OS/browser reduced-motion settings disable them. No additional animation dependency is required.
 
 Backend `npm audit` currently reports **zero advisories**. The three frontend advisories remain accepted risks **for local development only**, not resolved or production-approved: 11 affected-package findings (3 high, 3 moderate, 5 low).
 

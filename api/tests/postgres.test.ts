@@ -232,6 +232,22 @@ test('PostgreSQL: 24-hour ordinary write expiry applies current uniqueness and s
   await call('intakeParcel', { ...intake(), identifiers: Array.from({ length: 21 }, () => tracking()) }, staff, 400);
   assert.equal(await db.parcel.count(), 0);
 });
+test('PostgreSQL review: cancellation and later tracking references persist and reevaluate matching', async () => {
+  const cancellable = await call('createOrder', order('CANCEL-REVIEW'), a);
+  assert.equal((await call('cancelOrder', { orderId: cancellable.id }, a)).status, 'CANCELLED');
+  assert.equal((await db.expectedOrder.findUniqueOrThrow({ where: { id: cancellable.id } })).status, 'CANCELLED');
+  const expected = await call('createOrder', order('LATE-TRACKING-REVIEW'), a);
+  const physical = await call('intakeParcel', { ...intake(), identifiers: [tracking('LATE-TRACKING-001')] }, staff);
+  assert.equal(physical.studentId, undefined); assert.equal(physical.status, 'AWAITING_MATCH');
+  const linked = await call('addTracking', { orderId: expected.id, reference: tracking('LATE-TRACKING-001') }, a);
+  assert.equal(linked.status, 'MATCHED'); assert.deepEqual(linked.parcelIds, [physical.id]);
+  await call('addTracking', { orderId: expected.id, reference: tracking('LATE-TRACKING-001') }, a);
+  assert.equal(await db.orderReference.count({ where: { orderId: expected.id } }), 1);
+  const saved = await db.parcel.findUniqueOrThrow({ where: { id: physical.id } });
+  assert.equal(saved.orderId, expected.id); assert.equal(saved.studentId, a.accountId); assert.equal(saved.status, 'AWAITING_COLLECTION');
+  await call('cancelOrder', { orderId: expected.id }, a, 409);
+  assert.equal(await db.notification.count({ where: { parcelId: physical.id, eventKey: { startsWith: `arrival:${physical.id}:` } } }), 1);
+});
 test('PostgreSQL closeout: relevant conflicting evidence invalidates an unassigned review; unrelated orders do not', async () => {
   const target = await call('createOrder', order('MANUAL-TARGET'), a);
   const p = await call('intakeParcel', intake('LATE-CONFLICT'), staff);
