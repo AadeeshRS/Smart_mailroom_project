@@ -11,7 +11,7 @@ are ready to follow once the account exists.
 | Region | `aws-ap-southeast-1` (Singapore), the same region planned for Render |
 | Postgres | 17 |
 | Branch / database / role | `main` / `smart_mailroom_dev` / `neondb_owner` |
-| Migrations applied | `202611140001_v2_baseline`, `202611150001_collection_per_member` (2026-11-14) |
+| Migrations applied | `202611140001_v2_baseline`, `202611150001_collection_per_member` (2026-11-14), `202611150002_parcel_day_indexes` (2026-11-15) |
 
 - The connection string lives **only** in `api/.env.neon` on the machine that set it up (git-ignored through
   `.env.*`), and in Render's environment once the API is deployed. It never goes in chat, logs or commits.
@@ -24,16 +24,28 @@ are ready to follow once the account exists.
   `node --env-file=.env.neon node_modules/prisma/build/index.js migrate status`. A variable that's already set
   wins over `prisma.config.ts` loading `.env`, and a missing `.env.neon` is an error, not a fallback. Check that
   the `Datasource` line ends in `neon.tech`.
-- Once Render is running, its pre-deploy command applies new migrations; nobody needs to migrate Neon by hand.
+- Once Render is running, its start command applies new migrations before the server starts (`migrate deploy` does
+  nothing when the schema is current), so nobody needs to migrate Neon by hand.
 
 ## Requirements
 
-### Memory: at least 1 GB RAM for the API
+### Memory: Render's Free instance (512 MB) is enough
 
-Passwords are hashed with scrypt (N = 2^17, r = 8), which needs **128 MiB per hash or check**. The API runs at most
-two at a time (a semaphore in `api/src/core/security.ts`; extra logins wait about 0.3 s each), so scrypt alone can
-use 256 MiB on top of Node and Prisma. A 512 MB instance (Render's Free or Starter) can run out of memory during a
-burst of logins. **Use an instance with at least 1 GB of RAM** (Render's Standard has 2 GB).
+Passwords are hashed with scrypt (N = 2^14, r = 8, p = 5, OWASP's equivalent of N = 2^17, p = 1), which needs
+**16 MiB per hash or check**. Node runs at most four at once (its thread pool), so scrypt uses at most 64 MiB on top
+of Node and Prisma.
+
+### Render's Free plan: sleeps when idle, no Pre-Deploy, no Shell
+
+- The service **sleeps after 15 minutes with no requests**. The next request wakes it and takes about a minute; the
+  app shows its normal loading state meanwhile.
+- The **background worker runs only while the service is awake**. It expires old requests and collection codes,
+  deletes stale rows, and (from Phase 6) sends pushes and reminders. An operator logging a parcel wakes the service,
+  so its push still goes out within a minute; reminders and expiries wait for the next wake. A collection code is also
+  checked against its expiry time when it's used, so a sleeping worker never lets an old code work.
+- There's **no Pre-Deploy command**, so the start command runs the migrations first, and **no Shell**, so the first
+  admin is created from a laptop (below).
+- Neon also suspends its database after a few idle minutes; the first query after that takes a moment longer.
 
 ### Email: Resend's free plan is too small for registration day
 
@@ -59,13 +71,13 @@ Brevo** (that means a new sender in `api/src/modules/notifications/email.ts`).
    | Region | Singapore (Southeast Asia), next to the database |
    | Root Directory | `api` |
    | Build Command | `npm ci --include=dev && npm run generate && npm run build` |
-   | Start Command | `npm start` |
-   | Instance Type | **Standard** (2 GB), not Free or Starter: see the memory requirement above |
+   | Start Command | `npm run migrate && npm start` |
+   | Instance Type | **Free** |
 
-   `--include=dev` matters: with `NODE_ENV` set, a plain `npm ci` skips TypeScript and the Prisma CLI.
+   `--include=dev` matters: with `NODE_ENV` set, a plain `npm ci` skips TypeScript and the Prisma CLI, which the
+   start command needs for `npm run migrate`.
 4. Open **Advanced**:
    - **Health Check Path**: `/readyz`
-   - **Pre-Deploy Command**: `npm run migrate` (applies new migrations before each release; paid instances only)
    - **Auto-Deploy**: On Commit
 5. Under **Environment Variables**, click **Add Environment Variable** for each row. Leave out anything marked
    "don't set".
@@ -86,8 +98,8 @@ Brevo** (that means a new sender in `api/src/modules/notifications/email.ts`).
    | `REQUEST_EXPIRY_DAYS`, `COLLECTION_CODE_MINUTES`, `WAITING_TOO_LONG_DAYS`, `RATE_*` | Don't set unless changing the defaults (30 days, 15 minutes, 7 days, the limits below) |
    | `SEED_PASSWORD`, `CONTRACT_PATH` | Don't set |
 
-6. Click **Deploy Web Service** and watch **Logs**. The build ends with `tsc`, then the pre-deploy shows
-   `No pending migrations to apply`, then the service goes live.
+6. Click **Deploy Web Service** and watch **Logs**. The build ends with `tsc`. On start, `npm run migrate` shows
+   `No pending migrations to apply` (or applies new ones), then the server starts and the service goes live.
 7. Open `https://smart-mailroom-api.onrender.com/readyz`; it should answer `{"ok":true}`.
 8. Point the app at it: in `mobile/.env`, `EXPO_PUBLIC_API_BASE_URL=https://smart-mailroom-api.onrender.com/v1`,
    then restart `npx expo start`.
@@ -99,14 +111,20 @@ service runs with `NODE_ENV=staging`. Then nothing is emailed: every code (verif
 invite) is printed to the service's **Logs** as `[email to <address>] ... Your code is 123456`. Anyone who can read
 the logs can read the codes, so this is for the team's testing with test parcels only, never for real students.
 
-1. **First admin.** In the Render service, open **Shell** and run
-   `npm run create-admin -- your.name@college.edu "Your Name"`. The code is printed in the shell. In the app,
-   tap **Forgot password**, enter the same email, then the code and a new password.
+1. **First admin, from your own PC** (the Free plan has no Shell). In `api/`, run
+
+   ```
+   npm run create-admin:neon -- your.name@college.edu "Your Name"
+   ```
+
+   It reads the database URL only from `api/.env.neon` (never `api/.env`), refuses any host that doesn't end in
+   `neon.tech`, and only creates the account: nothing is emailed and no URL is printed. Then, in the app pointed at
+   Render, tap **Forgot password** and enter the same email. Render's **Logs** show
+   `[email to your.name@college.edu] ... Your code is 123456`; enter that code and a new password.
 2. **Teammates as members.** They register in the app with an address on `ALLOWED_EMAIL_DOMAINS`. Whoever has
    Render access searches **Logs** for `[email to their.address` and passes them the code.
-3. **Teammates as operators.** Admins can do everything operators can, so until the admin Users screen arrives
-   (Phase 7), create more admins with step 1. After that, an admin adds operators in the app and the invite code
-   appears in **Logs**.
+3. **Teammates as operators or admins.** An admin adds them in the app (**Dashboard → Users**); the invite code
+   appears in **Logs**, and they set a password with it through **Forgot password**.
 4. Don't run the seed on this database: its fixture accounts share one known password, on a server anyone can
    reach.
 

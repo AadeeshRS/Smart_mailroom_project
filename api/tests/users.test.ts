@@ -1,7 +1,10 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAdmin } from '../src/scripts/create-admin.js';
-import { PASSWORD, call, codeFor, db, fails, mail, mailer, ok, reset, settings, signIn } from './helpers.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createAdmin, neonUrl } from '../src/scripts/create-admin.js';
+import { PASSWORD, call, codeFor, db, fails, mail, ok, reset, signIn } from './helpers.js';
 
 beforeEach(reset);
 
@@ -145,9 +148,11 @@ test("an admin can't change themselves, and the last admin can't be removed, eve
   assert.equal(await db.user.count({ where: { role: 'ADMIN', active: true } }), 1);
 });
 
-test('create-admin bootstraps an admin and refuses to change an existing non-admin', async () => {
-  const user = await createAdmin(db, settings, mailer, 'First.Admin@College.Example', 'First Admin');
+test('create-admin bootstraps an admin, who sets a password through Forgot password; no non-admin is changed', async () => {
+  const user = await createAdmin(db, 'First.Admin@College.Example', 'First Admin');
   assert.equal(user.role, 'ADMIN');
+  assert.equal(mail.length, 0);
+  await ok('forgotPassword', { email: 'first.admin@college.example' });
   await ok('resetPassword', {
     email: 'first.admin@college.example',
     code: codeFor('first.admin@college.example'),
@@ -155,6 +160,23 @@ test('create-admin bootstraps an admin and refuses to change an existing non-adm
   });
   await ok('login', { email: 'first.admin@college.example', password: PASSWORD });
   const member = await signIn('MEMBER');
-  await assert.rejects(createAdmin(db, settings, mailer, member.user.email, 'X'), /refusing/);
-  assert.equal(mail.length, 1);
+  await assert.rejects(createAdmin(db, member.user.email, 'X'), /refusing/);
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: member.user.id } })).role, 'MEMBER');
+});
+
+test('create-admin --neon takes DATABASE_URL only from its file, and only for a neon.tech host', () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'neon-')), '.env.neon');
+  for (const host of ['localhost:5432', 'ep-x.neon.tech.example.com', 'notneon.tech']) {
+    writeFileSync(file, `DATABASE_URL=postgresql://u:secret@${host}/smart_mailroom_dev\n`);
+    assert.throws(
+      () => neonUrl(file),
+      (error: Error) => /not a neon\.tech host/.test(error.message) && !/secret/.test(error.message),
+    );
+  }
+  writeFileSync(file, 'DATABASE_URL=not a url\n');
+  assert.throws(() => neonUrl(file), /not a neon\.tech host/);
+  const url = 'postgresql://u:secret@ep-x.ap-southeast-1.aws.neon.tech/smart_mailroom_dev?sslmode=require';
+  writeFileSync(file, `# comment\nDATABASE_URL=${url}\n`);
+  assert.equal(neonUrl(file), url);
+  assert.throws(() => neonUrl(file + '.missing'), /ENOENT/);
 });

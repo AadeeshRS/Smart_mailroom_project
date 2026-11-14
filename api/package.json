@@ -17,7 +17,8 @@
     "test": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "create-admin": "node --env-file-if-exists=.env dist/api/src/scripts/create-admin.js"
+    "create-admin": "node --env-file-if-exists=.env dist/api/src/scripts/create-admin.js",
+    "create-admin:neon": "node --import tsx src/scripts/create-admin.ts --neon"
   },
   "dependencies": {
     "@fastify/cors": "11.3.1",
