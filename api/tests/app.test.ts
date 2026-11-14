@@ -1,6 +1,6 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { missingHandlers, operations } from '../src/app.js';
+import { invalidMessage, missingHandlers, operations } from '../src/app.js';
 import { phone } from '../src/core/phone.js';
 import { rate } from '../src/core/rate.js';
 import { config } from '../src/core/config.js';
@@ -37,6 +37,30 @@ test('malformed JSON and unexpected bodies are VALIDATION errors', async () => {
   });
   assert.equal(bad.statusCode, 400);
   assert.equal(bad.json().error.code, 'VALIDATION');
+  assert.doesNotMatch(bad.json().error.message, /JSON|body|Malformed/);
+});
+
+test('schema-validation errors name the field in plain words, not the validator’s text', async () => {
+  const valid = {
+    email: 'asha@college.example',
+    password: 'long-enough-1',
+    name: 'Asha',
+    memberType: 'STUDENT',
+    idNumber: 'S1',
+    phone: '9876543210',
+  };
+  const register = async (payload: object) =>
+    (await app.inject({ method: 'POST', url: '/v1/auth/register', payload })).json().error.message;
+  assert.equal(await register({ ...valid, password: 'short' }), 'Password must be at least 8 characters.');
+  const { name: _name, ...noName } = valid;
+  assert.equal(await register(noName), 'Name is required.');
+  assert.equal(await register({ ...valid, email: 'not-an-email' }), 'Email isn’t valid. Check it and try again.');
+  assert.equal(
+    invalidMessage({
+      validation: [{ keyword: 'maxLength', instancePath: '/idNumber', schemaPath: '', params: { limit: 40 } }],
+    }),
+    'ID number must be at most 40 characters.',
+  );
 });
 
 test('phone numbers normalise to E.164; masked or junk numbers are null', () => {

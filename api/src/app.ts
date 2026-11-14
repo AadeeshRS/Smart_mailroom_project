@@ -26,6 +26,24 @@ declare module 'fastify' {
 }
 
 export type AppOptions = { now?: () => Date; mailer?: Mailer };
+
+/** A schema-validation failure in words a person can act on (plan 8.4): the first problem, by field name. */
+export function invalidMessage(error: Pick<FastifyError, 'validation'>) {
+  const [first] = error.validation ?? [];
+  const name = String(first?.params?.missingProperty ?? first?.instancePath.split('/').pop() ?? '');
+  const field = name
+    ? name
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .replace(/^./, c => c.toUpperCase())
+        .replace(/\bid\b/i, 'ID')
+    : 'A value';
+  const limit = first?.params?.limit;
+  if (first?.keyword === 'required') return `${field} is required.`;
+  if (first?.keyword === 'minLength') return `${field} must be at least ${limit} characters.`;
+  if (first?.keyword === 'maxLength') return `${field} must be at most ${limit} characters.`;
+  return `${field} isn’t valid. Check it and try again.`;
+}
 const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) => void;
 const handlers: Partial<Handlers> = {
   ...auth,
@@ -92,9 +110,14 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
   app.setErrorHandler((error: FastifyError, request, reply) => {
     let e: DomainError;
     if (error instanceof DomainError) e = error;
-    else if (error.validation) e = new DomainError('VALIDATION', `Invalid request: ${error.message}.`);
-    else if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500)
-      e = new DomainError('VALIDATION', 'Malformed request.');
+    else if (error.validation) {
+      request.log.info({ requestId: request.id, validation: error.message }, 'Invalid request');
+      e = new DomainError('VALIDATION', invalidMessage(error));
+    } else if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500)
+      e = new DomainError(
+        'VALIDATION',
+        'The app sent something the server couldn’t read. Update the app and try again.',
+      );
     else {
       request.log.error({ err: error, requestId: request.id }, 'Unexpected error');
       e = new DomainError('INTERNAL', 'Something went wrong on our side. Try again later.');

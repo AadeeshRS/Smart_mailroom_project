@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { createHttpService, normalizeBaseUrl } from '../api/http';
-import { ServiceError, type MailroomService, type Schema } from '../api/service';
+import { ServiceError, errorText, type MailroomService, type Schema } from '../api/service';
 
 type User = Schema<'User'>;
 const { api, setToken } = createHttpService(normalizeBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL ?? ''));
@@ -77,9 +77,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const handleError = useCallback(
     (error: unknown) => {
-      if (!(error instanceof ServiceError)) return 'Something went wrong. Please try again.';
-      if (error.code === 'UNAUTHENTICATED' && user) void forget();
-      return error.message;
+      if (error instanceof ServiceError && error.code === 'UNAUTHENTICATED' && user) void forget();
+      return errorText(error);
     },
     [forget, user],
   );

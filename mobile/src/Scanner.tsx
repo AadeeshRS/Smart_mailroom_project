@@ -91,7 +91,11 @@ export function Scanner({
             ) : null}
           </Card>
         ) : available ? (
-          <View style={{ height: 340, borderRadius: 18, overflow: 'hidden' }}>
+          <View
+            accessible
+            accessibilityLabel="Camera viewfinder. Point it at the barcode; it scans on its own."
+            style={{ height: 340, borderRadius: 18, overflow: 'hidden' }}
+          >
             <CameraView
               style={{ flex: 1 }}
               facing="back"

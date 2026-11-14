@@ -13,6 +13,7 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { REFERENCE } from './api/service';
 import { useEntrance, usePressScale } from './motion';
 
 export const colors = {
@@ -58,7 +59,8 @@ export const styles = StyleSheet.create({
   buttonText: { color: colors.white, fontSize: 16, fontWeight: '700', textAlign: 'center' },
   input: {
     borderWidth: 1,
-    borderColor: '#9DB1AC',
+    // 3.6:1 on white: form-field outlines need 3:1 (WCAG 1.4.11).
+    borderColor: '#768B86',
     backgroundColor: colors.white,
     borderRadius: 12,
     padding: 14,
@@ -173,7 +175,9 @@ export function SuccessMark({ label = 'Saved' }: { label?: string }) {
         transform: [{ scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
       }}
     >
-      <Text style={{ color: colors.teal, fontSize: 30, fontWeight: '800' }}>✓</Text>
+      <Text allowFontScaling={false} style={{ color: colors.teal, fontSize: 30, fontWeight: '800' }}>
+        ✓
+      </Text>
     </Animated.View>
   );
 }
@@ -183,7 +187,8 @@ export function Field({ label, hint, ...props }: TextInputProps & { label: strin
       <Text style={{ ...styles.text, fontWeight: '600' }}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholderTextColor="#667D84"
+        accessibilityHint={hint}
+        placeholderTextColor="#5E747B"
         autoCorrect={false}
         style={styles.input}
         {...props}
@@ -223,18 +228,37 @@ export function Tag({ value }: { value: string }) {
     </View>
   );
 }
-export function Notice({ children, danger = false }: { children: React.ReactNode; danger?: boolean }) {
+export function Notice({
+  children,
+  danger = false,
+  details,
+}: {
+  children: React.ReactNode;
+  danger?: boolean;
+  /** A small second line, e.g. an error's reference for support. */
+  details?: string;
+}) {
+  const color = danger ? colors.red : colors.amber;
   return (
     <View
       accessibilityRole={danger ? 'alert' : undefined}
+      accessibilityLiveRegion={danger ? 'polite' : 'none'}
       style={{ padding: 16, borderRadius: 12, gap: 6, backgroundColor: danger ? colors.redPale : colors.amberPale }}
     >
-      <Text style={{ ...styles.text, fontSize: 14, color: danger ? colors.red : colors.amber }}>{children}</Text>
+      <Text style={{ ...styles.text, fontSize: 14, color }}>{children}</Text>
+      {!!details && <Text style={{ fontSize: 12, lineHeight: 18, color }}>{details}</Text>}
     </View>
   );
 }
+/** An error from useAction/useResource; a server error's request ID shows as a small reference line. */
 export function Feedback({ error }: { error: string }) {
-  return error ? <Notice danger>{error}</Notice> : null;
+  if (!error) return null;
+  const [message, reference] = error.split(REFERENCE);
+  return (
+    <Notice danger details={reference && `Reference ${reference}`}>
+      {message}
+    </Notice>
+  );
 }
 export function ResourceState({ loading, error, retry }: { loading: boolean; error: string; retry: () => void }) {
   return loading ? (
@@ -271,7 +295,7 @@ export function Choice<T extends string>({
   return (
     <View style={{ gap: 9 }}>
       <Body>{label}</Body>
-      <View style={styles.row}>
+      <View accessibilityRole="radiogroup" accessibilityLabel={label} style={styles.row}>
         {values.map(item => (
           <Pressable
             key={item}
@@ -326,7 +350,9 @@ export function Check({
           justifyContent: 'center',
         }}
       >
-        <Text style={{ color: colors.white, fontWeight: '800' }}>{checked ? '✓' : ''}</Text>
+        <Text allowFontScaling={false} style={{ color: colors.white, fontWeight: '800' }}>
+          {checked ? '✓' : ''}
+        </Text>
       </View>
       <Text style={{ ...styles.text, flex: 1 }}>{label}</Text>
     </Pressable>

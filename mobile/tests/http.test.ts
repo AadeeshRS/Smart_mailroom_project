@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { createHttpService, normalizeBaseUrl } from '../src/api/http';
+import { ServiceError, errorText } from '../src/api/service';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -66,4 +67,12 @@ it('only accepts a plain HTTP(S) base URL', () => {
   expect(normalizeBaseUrl('https://api.example.org/v1/')).toBe('https://api.example.org/v1');
   for (const bad of ['ftp://x/v1', 'https://user:pw@x/v1', 'https://x/v1?debug=1', 'not a url'])
     expect(() => normalizeBaseUrl(bad)).toThrow();
+});
+
+it('error text: the server message with its request ID as a reference; errors made in the app have none', () => {
+  expect(errorText(new ServiceError('VALIDATION', 'Name is required.', false, 'req_1'))).toBe(
+    'Name is required.\nReference: req_1',
+  );
+  expect(errorText(new ServiceError('NETWORK', 'Couldn’t reach the server.', true))).toBe('Couldn’t reach the server.');
+  expect(errorText(new Error('boom'))).toBe('Something went wrong. Please try again.');
 });
