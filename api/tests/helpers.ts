@@ -8,6 +8,7 @@ import { schemaRef, contract, type Input, type Operation, type Output } from '..
 import { config, dedicatedDataset } from '../src/core/config.js';
 import { database } from '../src/core/db.js';
 import { id, passwordHash } from '../src/core/security.js';
+import { truncateAll } from './truncate.js';
 
 export const settings = config();
 dedicatedDataset(settings.databaseUrl);
@@ -27,11 +28,9 @@ after(async () => {
 export const PASSWORD = 'correct-horse-battery';
 const hash = await passwordHash(PASSWORD);
 
-/** Empty every table. TRUNCATE skips the append-only audit trigger, which only guards rows. */
+/** Empty every table and restart the clock and mailbox. */
 export async function reset() {
-  const tables = await db.$queryRaw<{ name: string }[]>`
-    SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-  await db.$executeRawUnsafe(`TRUNCATE ${tables.map(t => `"${t.name}"`).join(', ')} CASCADE`);
+  await truncateAll(db);
   mail.length = 0;
   clock.now = Date.now();
 }

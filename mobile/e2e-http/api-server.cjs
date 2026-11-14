@@ -1,5 +1,5 @@
 /* global __dirname */
-// Test-only supervisor, never imported by the API or shipped in app bundles. It seeds the test database,
+// Test-only supervisor, never imported by the API or shipped in app bundles. It empties and seeds the test database,
 // runs the API on port 3100, and on 3101 serves the latest emailed code per address (read from the
 // API's console email provider) plus POST /restart.
 const { spawn } = require('node:child_process');
@@ -47,14 +47,16 @@ async function stop() {
     await exited;
   }
 }
-const seed = spawn(process.execPath, ['--import', 'tsx', 'src/seed.ts'], {
-  cwd,
-  env,
-  windowsHide: true,
-  stdio: 'ignore',
-});
-seed.on('exit', async code => {
-  if (code) throw Error('Test seed failed.');
+const run = script =>
+  new Promise((resolve, reject) =>
+    spawn(process.execPath, ['--import', 'tsx', script], { cwd, env, windowsHide: true, stdio: 'ignore' }).on(
+      'exit',
+      code => (code ? reject(Error(`${script} failed.`)) : resolve()),
+    ),
+  );
+void (async () => {
+  await run('tests/reset-http.ts');
+  await run('src/seed.ts');
   await start();
   http
     .createServer(async (request, response) => {
@@ -71,7 +73,7 @@ seed.on('exit', async code => {
       response.end('Test supervisor ready');
     })
     .listen(3101, '127.0.0.1');
-});
+})();
 process.on('SIGINT', () => {
   void stop().then(() => process.exit());
 });
