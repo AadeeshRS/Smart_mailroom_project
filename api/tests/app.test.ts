@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { missingHandlers, operations } from '../src/app.js';
 import { phone } from '../src/core/phone.js';
 import { rate } from '../src/core/rate.js';
-import { id } from '../src/core/security.js';
+import { config } from '../src/core/config.js';
+import { id, semaphore } from '../src/core/security.js';
 import { cleanup } from '../src/jobs/worker.js';
 import { app, clock, db, reset, signIn } from './helpers.js';
 
@@ -88,4 +89,37 @@ test('the audit log is append-only, with no bypass', async () => {
   await assert.rejects(db.$executeRaw`UPDATE "AuditEvent" SET detail = 'x'`, /append-only/);
   await assert.rejects(db.$executeRaw`SET mailroom.reset = 'enabled'; DELETE FROM "AuditEvent"`);
   await assert.rejects(db.auditEvent.deleteMany(), /append-only/);
+});
+
+test('semaphore: at most two tasks run at once, in order, and a failure frees its slot', async () => {
+  const slot = semaphore(2);
+  let running = 0;
+  let peak = 0;
+  const finished: number[] = [];
+  const task = (n: number) =>
+    slot(async () => {
+      peak = Math.max(peak, ++running);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      running--;
+      if (n === 2) throw new Error('boom');
+      finished.push(n);
+      return n;
+    });
+  const results = await Promise.allSettled([0, 1, 2, 3, 4, 5].map(task));
+  assert.equal(peak, 2);
+  assert.deepEqual(finished, [0, 1, 3, 4, 5]);
+  assert.equal(results[2].status, 'rejected');
+  assert.equal(await slot(async () => 'free'), 'free');
+});
+
+test('config: per-IP limits default loose, read RATE_* variables, and reject junk', () => {
+  const base = { DATABASE_URL: 'postgresql://x@localhost/db', CREDENTIAL_PEPPER: 'p'.repeat(32) };
+  assert.deepEqual(config(base).rates, { loginPerIp: 300, codesPerIp: 150, codeChecksPerIp: 300 });
+  assert.deepEqual(
+    config({ ...base, RATE_LOGIN_PER_IP: '50', RATE_CODES_PER_IP: '20', RATE_CODE_CHECKS_PER_IP: '40' }).rates,
+    { loginPerIp: 50, codesPerIp: 20, codeChecksPerIp: 40 },
+  );
+  for (const bad of ['0', '-1', '1.5', 'lots'])
+    assert.throws(() => config({ ...base, RATE_LOGIN_PER_IP: bad }), /RATE_LOGIN_PER_IP/);
+  assert.throws(() => config({ ...base, NODE_ENV: 'production' }), /RESEND_API_KEY, MAIL_FROM, ALLOWED_EMAIL_DOMAINS/);
 });

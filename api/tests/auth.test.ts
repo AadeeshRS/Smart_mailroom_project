@@ -1,7 +1,8 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createApp } from '../src/app.js';
 import type { Input } from '../src/contract.js';
-import { PASSWORD, call, clock, codeFor, db, fails, mail, ok, reset, signIn } from './helpers.js';
+import { PASSWORD, call, clock, codeFor, db, fails, mail, mailer, ok, reset, settings, signIn } from './helpers.js';
 
 beforeEach(reset);
 
@@ -150,4 +151,33 @@ test('a deactivated account can no longer sign in', async () => {
   await db.user.update({ where: { id: user.id }, data: { active: false } });
   await fails('getMe', {}, 'UNAUTHENTICATED', token);
   await fails('login', { email: user.email, password: PASSWORD }, 'ACCOUNT_DISABLED');
+});
+
+test('six simultaneous logins all succeed while scrypt runs two at a time', async () => {
+  const users = await Promise.all(Array.from({ length: 6 }, () => signIn('MEMBER')));
+  const sessions = await Promise.all(users.map(({ user }) => call('login', { email: user.email, password: PASSWORD })));
+  assert.deepEqual(
+    sessions.map(s => s.status),
+    [200, 200, 200, 200, 200, 200],
+  );
+});
+
+test('the per-IP login limit is configurable and counts every attempt; per-email limits stay strict', async () => {
+  const strict = await createApp(
+    db,
+    { ...settings, rates: { ...settings.rates, loginPerIp: 3 } },
+    { now: () => new Date(clock.now), mailer },
+  );
+  try {
+    const users = await Promise.all(Array.from({ length: 4 }, () => signIn('MEMBER')));
+    const login = (email: string) =>
+      strict.inject({ method: 'POST', url: '/v1/auth/login', payload: { email, password: PASSWORD } });
+    // signIn() above already used this IP's window on the shared app; the strict app shares the database counters.
+    await db.rateWindow.deleteMany({ where: { key: { startsWith: 'login:ip:' } } });
+    const statuses = [];
+    for (const { user } of users) statuses.push((await login(user.email)).statusCode);
+    assert.deepEqual(statuses, [200, 200, 200, 429]);
+  } finally {
+    await strict.close();
+  }
 });

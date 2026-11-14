@@ -10,12 +10,11 @@ const DAY = 24 * 60 * MINUTE;
 export const SESSION_MS = 7 * DAY;
 const CODE_MS = 10 * MINUTE;
 const CODE_ATTEMPTS = 5;
+// Per 15-minute window. Per-email limits are strict and fixed; per-IP limits come from config (RATE_*_PER_IP)
+// and are loose, because a whole campus can share one public IP.
 const WINDOW = 15 * MINUTE;
-// ponytail: per-IP limits follow plan §5 (10 logins per 15 min). A campus behind one NAT address shares them;
-// raise the per-IP numbers if students get RATE_LIMITED at the start of term.
-const LOGINS_PER_WINDOW = 10;
-const CODES_PER_WINDOW = 5;
-const IP_CODES_PER_WINDOW = 30;
+const LOGINS_PER_EMAIL = 10;
+const CODES_PER_EMAIL = 5;
 // Same cost as a real hash, so an unknown email takes as long as a wrong password.
 const DUMMY_HASH = 'scrypt$131072$8$1$00000000000000000000000000000000$' + '0'.repeat(128);
 
@@ -80,15 +79,15 @@ async function sendQuietly(ctx: Ctx, user: User, purpose: CodePurpose) {
 }
 
 async function limitCodes(ctx: Ctx, email: string) {
-  await limit(ctx.db, `code:email:${email}`, CODES_PER_WINDOW, ctx.now, WINDOW);
-  await limit(ctx.db, `code:ip:${ctx.ip}`, IP_CODES_PER_WINDOW, ctx.now, WINDOW);
+  await limit(ctx.db, `code:email:${email}`, CODES_PER_EMAIL, ctx.now, WINDOW);
+  await limit(ctx.db, `code:ip:${ctx.ip}`, ctx.config.rates.codesPerIp, ctx.now, WINDOW);
 }
 
 /** Check a code. Each check spends one of the code's 5 attempts before comparing, so parallel guesses can't
  * exceed the limit. The code is consumed on success. */
 async function useCode(ctx: Ctx, rawEmail: string, purpose: CodePurpose, code: string) {
   const invalid = () => fail('CODE_INVALID', 'That code is wrong or has expired. Request a new one.');
-  await limit(ctx.db, `code-check:ip:${ctx.ip}`, IP_CODES_PER_WINDOW, ctx.now, WINDOW);
+  await limit(ctx.db, `code-check:ip:${ctx.ip}`, ctx.config.rates.codeChecksPerIp, ctx.now, WINDOW);
   const user = await ctx.db.user.findUnique({ where: { email: normalEmail(rawEmail) } });
   const row =
     user &&
@@ -155,8 +154,8 @@ export async function verifyEmail(input: Input<'verifyEmail'>, ctx: Ctx) {
 
 export async function login(input: Input<'login'>, ctx: Ctx) {
   const email = normalEmail(input.email);
-  await limit(ctx.db, `login:email:${email}`, LOGINS_PER_WINDOW, ctx.now, WINDOW);
-  await limit(ctx.db, `login:ip:${ctx.ip}`, LOGINS_PER_WINDOW, ctx.now, WINDOW);
+  await limit(ctx.db, `login:email:${email}`, LOGINS_PER_EMAIL, ctx.now, WINDOW);
+  await limit(ctx.db, `login:ip:${ctx.ip}`, ctx.config.rates.loginPerIp, ctx.now, WINDOW);
   const user = await ctx.db.user.findUnique({ where: { email } });
   const valid = await passwordValid(input.password, user?.passwordHash ?? DUMMY_HASH);
   if (!user?.passwordHash || !valid) fail('UNAUTHENTICATED', 'Wrong email or password.');
@@ -194,7 +193,7 @@ export async function logout(ctx: Ctx) {
 
 export async function changePassword(input: Input<'changePassword'>, ctx: Ctx) {
   const { user, session } = signedIn(ctx);
-  await limit(ctx.db, `password:${user.id}`, LOGINS_PER_WINDOW, ctx.now, WINDOW);
+  await limit(ctx.db, `password:${user.id}`, LOGINS_PER_EMAIL, ctx.now, WINDOW);
   if (!(await passwordValid(input.currentPassword, user.passwordHash ?? DUMMY_HASH)))
     fail('VALIDATION', 'Your current password is wrong.');
   await ctx.db.$transaction([
