@@ -39,17 +39,33 @@ test('development screens do not render empty text directly inside native Views'
   for (const [role, landing] of [
     ['member', 'Hello, Test'],
     ['operator', 'Receive a parcel'],
-    ['admin', 'Receive a parcel'],
+    ['admin', 'Dashboard'],
   ] as const) {
     await page.goto('/login');
     await signIn(page, `${role}@college.example`);
     await expect(heading(page, landing)).toBeVisible();
+    if (role === 'member')
+      for (const [tab, title] of [
+        ['Requests', 'Requests'],
+        ['Past', 'Past parcels'],
+      ]) {
+        await page.getByRole('tab', { name: new RegExp(tab) }).click();
+        await expect(heading(page, title)).toBeVisible();
+      }
+    if (role === 'admin')
+      for (const sheet of ['Users', 'Hostels']) {
+        await page.getByRole('button', { name: sheet, exact: true }).click();
+        await expect(heading(page, sheet)).toBeVisible();
+        await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+      }
     if (role === 'operator') {
       await field(page, 'AWB or order ID').fill('D12345678');
       await page.getByRole('button', { name: 'Look up', exact: true }).click();
       await expect(heading(page, 'Label details')).toBeVisible();
       await page.getByRole('tab', { name: /Parcels/ }).click();
       await expect(heading(page, 'Parcels')).toBeVisible();
+      await page.getByRole('tab', { name: /Giveaway/ }).click();
+      await expect(heading(page, 'Giveaway')).toBeVisible();
     }
     await page.getByRole('tab', { name: /Profile/ }).click();
     await expect(heading(page, 'Profile')).toBeVisible();
