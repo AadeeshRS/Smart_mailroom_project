@@ -20,7 +20,7 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: 'node e2e/serve.cjs',
+      command: 'node e2e-http/serve.cjs',
       url: 'http://127.0.0.1:8082',
       env: { WEB_PORT: '8082', WEB_EXPORT_DIRECTORY: 'dist-http' },
       reuseExistingServer: false,

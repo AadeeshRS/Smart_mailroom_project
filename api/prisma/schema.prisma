@@ -1,234 +1,263 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  MEMBER
+  OPERATOR
+  ADMIN
+}
+
+enum MemberType {
+  STUDENT
+  STAFF
+}
+
+enum CodePurpose {
+  VERIFY
+  RESET
+}
+
+enum ParcelStatus {
+  IN_MAILROOM
+  COLLECTED
+  RETURNED
+}
+
+enum MatchSource {
+  REQUEST
+  CONTACT
+  MANUAL
+}
+
+enum MatchFlag {
+  AMBIGUOUS
+  CONFLICT
+}
+
+enum RequestStatus {
+  OPEN
+  MATCHED
+  CANCELLED
+  EXPIRED
+}
+
+enum CollectionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum PushState {
+  PENDING
+  SENT
+  FAILED
+}
+
 model User {
-  id String @id
-  name String
-  email String @unique
-  studentNumber String? @unique
-  role String
-  passwordHash String
-  synthetic Boolean @default(true)
-  sessions Session[]
-  orders ExpectedOrder[]
-  parcels Parcel[]
-  notifications Notification[]
-  handovers Handover[] @relation("StudentHandovers")
-  staffHandovers Handover[] @relation("StaffHandovers")
-  decisions Decision[]
-  audits AuditEvent[]
-  idempotency Idempotency[]
-  snapshots Snapshot[]
+  id              String      @id
+  role            Role        @default(MEMBER)
+  /// College email for members, any email for operators. Lowercase. Can't be changed.
+  email           String      @unique
+  /// Can't be changed by the member.
+  name            String
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  active          Boolean     @default(true)
+  memberType      MemberType?
+  /// Enrollment or staff ID.
+  idNumber        String?     @unique
+  /// Lowercase.
+  personalEmail   String?
+  /// E.164. Unique, so one person can't claim another's number.
+  phone           String?     @unique
+  altPhone        String?
+  hostelId        String?
+  hostel          Hostel?     @relation(fields: [hostelId], references: [id])
+  roomNumber      String?
+  createdAt       DateTime    @default(now())
+
+  codes             EmailCode[]
+  sessions          Session[]
+  devices           Device[]
+  parcels           Parcel[]        @relation("Recipient")
+  receivedParcels   Parcel[]        @relation("ReceivedBy")
+  collectedParcels  Parcel[]        @relation("CollectedBy")
+  requests          ParcelRequest[]
+  collections       Collection[]    @relation("Collector")
+  handovers         Collection[]    @relation("Operator")
+  notifications     Notification[]
+  audits            AuditEvent[]
+
+  @@index([altPhone])
+  @@index([personalEmail])
 }
-model Session {
-  id String @id
-  tokenDigest String @unique
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  revokedAt DateTime?
-  verifications Verification[]
-  credentials Credential[]
+
+model Hostel {
+  id     String  @id
+  name   String  @unique
+  active Boolean @default(true)
+  users  User[]
 }
-model ExpectedOrder {
-  id String @id
-  studentId String
-  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  platform String
-  merchantOrderId String
-  originalOrderId String
-  status String @default("PENDING")
-  createdAt DateTime @default(now())
-  tracking OrderReference[]
-  parcels Parcel[]
-  decisions Decision[]
-  handovers Handover[]
-  @@index([platform, merchantOrderId])
-}
-model OrderReference {
-  id String @id
-  orderId String
-  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  namespace String
-  value String
-  originalValue String
-  @@unique([orderId, namespace, value])
-  @@index([namespace, value])
-}
-model Parcel {
-  id String @id
-  physicalReference String
-  physicalKey String @unique
-  description String
-  storageLocation String
-  recipientEmail String
-  recipientStudentNumber String
-  recipientName String
-  source String
-  status String @default("RECEIVED")
-  receivedAt DateTime @default(now())
-  revision Int @default(1)
-  orderId String?
-  order ExpectedOrder? @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  studentId String?
-  student User? @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  hold String @default("NONE")
-  holdReason String @default("")
-  matchOutcome String @default("NO_MATCH")
-  matchExplanation String @default("")
-  credentialState String @default("NONE")
-  reviewedFingerprint String?
-  observedFingerprint String?
-  identifiers ParcelIdentifier[]
-  decisions Decision[]
-  credentials Credential[]
-  verifications Verification[]
-  handover Handover?
-  audits AuditEvent[]
-  notifications Notification[]
-  @@index([studentId, receivedAt, id])
-}
-model ParcelIdentifier {
-  id String @id
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  kind String
-  namespace String
-  value String
-  originalValue String
-  @@index([kind, namespace, value])
-}
-model Decision {
-  id String @id
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  orderId String
-  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  actorId String
-  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  fingerprint String
-  reason String
-  identifierReviewed Boolean
-  recipientVerified Boolean
-  conflictsResolved Boolean
-  createdAt DateTime @default(now())
-}
-model Credential {
-  id String @id
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  sessionId String
-  session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  otpDigest String
-  qrDigest String
-  state String @default("ACTIVE")
-  attempts Int @default(0)
-  issuedAt DateTime @default(now())
-  expiresAt DateTime
-  verifications Verification[]
-  @@index([parcelId, issuedAt])
-}
-model Verification {
-  id String @id
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  credentialId String
-  credential Credential @relation(fields: [credentialId], references: [id], onDelete: Restrict)
-  staffSessionId String
-  staffSession Session @relation(fields: [staffSessionId], references: [id], onDelete: Restrict)
-  parcelRevision Int
-  expiresAt DateTime
+
+model EmailCode {
+  id         String      @id
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    CodePurpose
+  codeDigest String
+  attempts   Int         @default(0)
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime
   consumedAt DateTime?
-  handover Handover?
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
 }
-model Handover {
-  id String @id
-  parcelId String @unique
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  orderId String
-  order ExpectedOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  studentId String
-  student User @relation("StudentHandovers", fields: [studentId], references: [id], onDelete: Restrict)
-  staffId String
-  staff User @relation("StaffHandovers", fields: [staffId], references: [id], onDelete: Restrict)
-  verificationId String @unique
-  verification Verification @relation(fields: [verificationId], references: [id], onDelete: Restrict)
-  storageLocation String
-  confirmedAt DateTime @default(now())
-  idempotency Idempotency[]
+
+model Session {
+  id          String    @id
+  tokenDigest String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
-model Idempotency {
-  id String @id
-  actorId String
-  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  operation String
-  key String
-  fingerprint String
-  result Json
-  expiresAt DateTime?
-  receiptId String?
-  receipt Handover? @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+
+model Device {
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  String
   createdAt DateTime @default(now())
-  @@unique([actorId, operation, key])
+
+  @@index([userId])
 }
+
+model Parcel {
+  /// Client-generated UUID, so retrying an intake can't create a duplicate.
+  id             String       @id
+  /// Normalised: trimmed, uppercase, spaces removed.
+  awb            String?
+  orderId        String?
+  carrier        String?
+  labelName      String?
+  /// E.164 if parseable, otherwise null (masked numbers).
+  labelPhone     String?
+  labelEmail     String?
+  labelHostel    String?
+  labelRoom      String?
+  shelf          String
+  note           String?
+  status         ParcelStatus @default(IN_MAILROOM)
+  recipientId    String?
+  recipient      User?        @relation("Recipient", fields: [recipientId], references: [id])
+  matchSource    MatchSource?
+  matchFlag      MatchFlag?
+  receivedAt     DateTime     @default(now())
+  receivedById   String
+  receivedBy     User         @relation("ReceivedBy", fields: [receivedById], references: [id])
+  collectedAt    DateTime?
+  collectedById  String?
+  collectedBy    User?        @relation("CollectedBy", fields: [collectedById], references: [id])
+  lastRemindedAt DateTime?
+
+  requests      ParcelRequest[]
+  collections   Collection[]
+  notifications Notification[]
+  audits        AuditEvent[]
+
+  @@index([awb])
+  @@index([orderId])
+  @@index([labelPhone])
+  @@index([labelEmail])
+  @@index([recipientId, status])
+  @@index([status, receivedAt])
+}
+
+model ParcelRequest {
+  id          String        @id
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  awb         String
+  orderId     String?
+  carrier     String?
+  /// Plain text: the operator reads it out. Cleared on match, cancellation or expiry.
+  deliveryOtp String?
+  note        String?
+  status      RequestStatus @default(OPEN)
+  parcelId    String?
+  parcel      Parcel?       @relation(fields: [parcelId], references: [id])
+  createdAt   DateTime      @default(now())
+  expiresAt   DateTime
+
+  @@index([userId, status])
+  @@index([orderId])
+}
+
+model Collection {
+  id          String           @id
+  parcelId    String
+  parcel      Parcel           @relation(fields: [parcelId], references: [id])
+  userId      String
+  user        User             @relation("Collector", fields: [userId], references: [id])
+  otpDigest   String
+  attempts    Int              @default(0)
+  status      CollectionStatus @default(PENDING)
+  requestedAt DateTime         @default(now())
+  expiresAt   DateTime
+  completedAt DateTime?
+  operatorId  String?
+  operator    User?            @relation("Operator", fields: [operatorId], references: [id])
+
+  @@index([status, requestedAt])
+}
+
 model Notification {
-  id String @id
-  eventKey String @unique
-  studentId String
-  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  title String
-  message String
-  createdAt DateTime @default(now())
-  readAt DateTime?
-  attempts DeliveryAttempt[]
-  @@index([studentId, createdAt, id])
+  id           String    @id
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  parcelId     String?
+  parcel       Parcel?   @relation(fields: [parcelId], references: [id])
+  type         String
+  title        String
+  body         String
+  createdAt    DateTime  @default(now())
+  readAt       DateTime?
+  pushState    PushState @default(PENDING)
+  pushAttempts Int       @default(0)
+
+  @@index([userId, createdAt])
+  @@index([pushState])
 }
-model DeliveryAttempt {
-  id String @id
-  notificationId String
-  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
-  state String @default("PENDING")
-  simulated Boolean @default(true)
-  providerEventId String? @unique
-  createdAt DateTime @default(now())
-  processedAt DateTime?
-  results DeliveryResult[]
-  @@index([state, createdAt])
-}
-model DeliveryResult {
-  eventId String @id
-  attemptId String
-  attempt DeliveryAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
-  state String
-  occurredAt DateTime
-}
+
+/// Append-only: a trigger rejects UPDATE and DELETE, with no bypass.
 model AuditEvent {
-  id String @id
-  parcelId String
-  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
-  actorId String
-  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  action String
-  reason String
-  at DateTime @default(now())
+  id       String   @id
+  actorId  String
+  actor    User     @relation(fields: [actorId], references: [id])
+  parcelId String?
+  parcel   Parcel?  @relation(fields: [parcelId], references: [id])
+  action   String
+  detail   String
+  at       DateTime @default(now())
+
+  @@index([parcelId, at])
 }
-model Snapshot {
-  id String @id
-  actorId String
-  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  binding String
-  ids Json
-  offset Int
-  expiresAt DateTime
-}
+
 model RateWindow {
-  key String @id
-  count Int
+  key       String   @id
+  count     Int
   expiresAt DateTime
+
+  @@index([expiresAt])
 }
