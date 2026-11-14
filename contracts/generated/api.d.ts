@@ -968,7 +968,10 @@ export interface components {
             items: {
                 parcel: components["schemas"]["OperatorParcel"];
                 daysWaiting: number;
-                /** Format: date-time */
+                /**
+                 * Format: date-time
+                 * @description When the member was last told, by the arrival notice or a reminder; null while unlinked
+                 */
                 lastRemindedAt: string | null;
             }[];
         };

@@ -1126,7 +1126,11 @@ components:
             properties:
               parcel: { $ref: '#/components/schemas/OperatorParcel' }
               daysWaiting: { type: integer }
-              lastRemindedAt: { type: string, format: date-time, nullable: true }
+              lastRemindedAt:
+                type: string
+                format: date-time
+                nullable: true
+                description: When the member was last told, by the arrival notice or a reminder; null while unlinked
     ErrorCode:
       type: string
       enum:

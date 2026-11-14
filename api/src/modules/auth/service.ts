@@ -150,7 +150,7 @@ export async function verifyEmail(input: Input<'verifyEmail'>, ctx: Ctx) {
     where: { id: user.id },
     data: { emailVerifiedAt: user.emailVerifiedAt ?? ctx.now },
   });
-  await rematchFor(ctx.db, verified); // parcels may have arrived before the member verified
+  await rematchFor(ctx.db, verified, ctx.now); // parcels may have arrived before the member verified
   return startSession(ctx, verified);
 }
 

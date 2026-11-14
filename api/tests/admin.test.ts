@@ -57,13 +57,13 @@ test('stats count one day by the phone’s midnight, and bucket what’s waiting
   assert.deepEqual([tenDaysAgo.received, tenDaysAgo.collected], [1, 0]);
 });
 
-test('the waiting-too-long list is oldest first, with the member’s contact details', async () => {
+test('the waiting-too-long list is oldest first, with the member’s contact details and when they were told', async () => {
   const { mid, old } = await seedWeek();
   const tooLong = await ok('listAging', {}, admin.token);
   assert.equal(tooLong.olderThanDays, 7);
   assert.deepEqual(
     tooLong.items.map(i => [i.parcel.id, i.daysWaiting, i.parcel.recipient?.phone, i.lastRemindedAt]),
-    [[old.id, 10, '+919876543210', null]],
+    [[old.id, 10, '+919876543210', at(clock.now - 10 * DAY)]],
   );
   assert.deepEqual(
     (await ok('listAging', { olderThanDays: 3 }, admin.token)).items.map(i => i.parcel.id),

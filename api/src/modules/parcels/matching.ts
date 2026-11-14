@@ -30,17 +30,20 @@ export const describe = (parcel: Pick<Parcel, 'awb' | 'orderId' | 'carrier'>) =>
   `Your ${parcel.carrier ? parcel.carrier.replace('_', ' ').toLowerCase() + ' ' : ''}parcel ${parcel.awb ?? parcel.orderId}`;
 
 /** Link a parcel to a member unless someone already has it (conditional update: two links racing can't both
- * win), then audit it and queue the arrival notification, all in the caller's transaction. */
+ * win), then audit it and queue the arrival notification, all in the caller's transaction. The arrival notice
+ * counts as the last reminder, so the reminder job waits REMINDER_AFTER_DAYS from now, even for a parcel that had
+ * already waited that long unlinked. */
 export async function link(
   tx: Tx,
   parcel: Pick<Parcel, 'id' | 'awb' | 'orderId' | 'carrier'>,
   userId: string,
   source: MatchSource,
   actorId: string,
+  now: Date,
 ) {
   const { count } = await tx.parcel.updateMany({
     where: { id: parcel.id, recipientId: null, status: 'IN_MAILROOM' },
-    data: { recipientId: userId, matchSource: source, matchFlag: null },
+    data: { recipientId: userId, matchSource: source, matchFlag: null, lastRemindedAt: now },
   });
   if (!count) return false;
   await tx.auditEvent.create({
@@ -75,6 +78,7 @@ export async function claim(
   parcel: Parcel,
   request: { id: string; userId: string; user: { name: string } },
   actorId: string,
+  now: Date,
 ) {
   const { count } = await tx.parcelRequest.updateMany({
     where: { id: request.id, status: 'OPEN' },
@@ -84,7 +88,7 @@ export async function claim(
   const [theirs] = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail, { id: request.userId });
   const others = theirs ? [] : await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
   if (!others.length) {
-    await link(tx, parcel, request.userId, 'REQUEST', actorId);
+    await link(tx, parcel, request.userId, 'REQUEST', actorId, now);
     return true;
   }
   await tx.parcel.update({ where: { id: parcel.id }, data: { matchFlag: 'CONFLICT' } });
@@ -102,19 +106,19 @@ export async function claim(
 
 /** Plan §4.7: an open request wins (step 1); else the contact match (step 2), where one owner links, several
  * flag AMBIGUOUS, none leaves the parcel unlinked. A CONFLICT is the operator's call, so it's left alone. */
-export async function findRecipient(tx: Tx, parcel: Parcel, actorId: string) {
+export async function findRecipient(tx: Tx, parcel: Parcel, actorId: string, now: Date) {
   if (parcel.matchFlag === 'CONFLICT') return;
   const request = await openRequest(tx, parcel.awb, parcel.orderId);
-  if (request && (await claim(tx, parcel, request, actorId))) return;
+  if (request && (await claim(tx, parcel, request, actorId, now))) return;
   const owners = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
-  if (owners.length === 1) await link(tx, parcel, owners[0].id, 'CONTACT', actorId);
+  if (owners.length === 1) await link(tx, parcel, owners[0].id, 'CONTACT', actorId, now);
   else if (owners.length > 1 && parcel.matchFlag !== 'AMBIGUOUS')
     await tx.parcel.update({ where: { id: parcel.id }, data: { matchFlag: 'AMBIGUOUS' } });
 }
 
 /** Reverse trigger after a member verifies their email or edits their contacts: re-run matching only for
  * unlinked parcels whose label carries one of their contacts. */
-export async function rematchFor(db: PrismaClient, user: User) {
+export async function rematchFor(db: PrismaClient, user: User, now: Date) {
   if (user.role !== 'MEMBER' || !user.active || !user.emailVerifiedAt) return;
   const phones = [user.phone, user.altPhone].filter((v): v is string => !!v);
   const emails = [user.email, user.personalEmail].filter((v): v is string => !!v);
@@ -125,5 +129,5 @@ export async function rematchFor(db: PrismaClient, user: User) {
       OR: [{ labelPhone: { in: phones } }, { labelEmail: { in: emails } }],
     },
   });
-  for (const parcel of parcels) await db.$transaction(tx => findRecipient(tx, parcel, user.id));
+  for (const parcel of parcels) await db.$transaction(tx => findRecipient(tx, parcel, user.id, now));
 }

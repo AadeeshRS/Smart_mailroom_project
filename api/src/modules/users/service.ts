@@ -89,7 +89,7 @@ export async function updateMe(input: Input<'updateMe'>, ctx: Ctx) {
     ctx.db.user.update({ where: { id: user.id }, data, include: { hostel: true } }),
   );
   // Reverse trigger: new contact details may match parcels already waiting.
-  if ('phone' in data || 'altPhone' in data || 'personalEmail' in data) await rematchFor(ctx.db, updated);
+  if ('phone' in data || 'altPhone' in data || 'personalEmail' in data) await rematchFor(ctx.db, updated, ctx.now);
   return toUser(ctx, updated);
 }
 

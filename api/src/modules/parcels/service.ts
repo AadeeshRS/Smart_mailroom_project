@@ -94,7 +94,7 @@ export async function intake(input: Input<'intakeParcel'>, ctx: Ctx) {
       await tx.auditEvent.create({
         data: { id: id('aud'), actorId: user.id, parcelId: parcel.id, action: 'RECEIVED', detail: `Shelf ${shelf}` },
       });
-      await findRecipient(tx, parcel, user.id);
+      await findRecipient(tx, parcel, user.id, ctx.now);
     });
   } catch (error) {
     if (uniqueViolation(error) !== 'id') throw error;
@@ -151,7 +151,7 @@ export async function assign(input: Input<'assignParcel'>, ctx: Ctx) {
   const parcel = await load(ctx, input.parcelId);
   const member = await ctx.db.user.findFirst({ where: { id: input.userId, ...matchable } });
   if (!member) fail('NOT_FOUND', 'Member not found, or their email is not verified yet.');
-  if (!(await ctx.db.$transaction(tx => link(tx, parcel, member.id, 'MANUAL', user.id)))) {
+  if (!(await ctx.db.$transaction(tx => link(tx, parcel, member.id, 'MANUAL', user.id, ctx.now)))) {
     const now = await load(ctx, parcel.id);
     if (now.status !== 'IN_MAILROOM') fail('NOT_IN_MAILROOM', 'This parcel has already left the mailroom.');
     fail('ALREADY_ASSIGNED', `This parcel is already linked to ${now.recipient?.name ?? 'a member'}.`);

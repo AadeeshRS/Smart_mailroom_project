@@ -82,7 +82,7 @@ export async function create(input: Input<'createRequest'>, ctx: Ctx) {
           where: { id: request.id },
           data: { status: 'MATCHED', parcelId: mine.id, deliveryOtp: null },
         });
-      else if (free) await claim(tx, free, { ...request, user }, user.id);
+      else if (free) await claim(tx, free, { ...request, user }, user.id, ctx.now);
     });
   } catch (error) {
     if (uniqueViolation(error) !== 'one_open_request_per_awb') throw error;

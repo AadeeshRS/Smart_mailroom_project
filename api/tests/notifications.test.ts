@@ -117,6 +117,21 @@ test('a token Expo reports as DeviceNotRegistered is deleted', async () => {
   assert.equal((await state(notice.id)).pushState, 'SKIPPED');
 });
 
+test('a parcel linked after waiting 5 days gets its first reminder 3 days after the arrival notice', async () => {
+  const operator = await signIn('OPERATOR');
+  const asha = await signIn('MEMBER');
+  const start = clock.now;
+  clock.now = start - 5 * DAY;
+  const parcel = await intake(operator.token);
+  clock.now = start;
+  await ok('assignParcel', { parcelId: parcel.id, userId: asha.user.id }, operator.token);
+  const reminders = () => db.notification.count({ where: { type: 'REMINDER' } });
+  await remindWaiting(db, new Date(clock.now), 3);
+  assert.equal(await reminders(), 0);
+  await remindWaiting(db, new Date(clock.now + 3 * DAY), 3);
+  assert.equal(await reminders(), 1);
+});
+
 test('the reminder job reminds a linked waiting parcel every N days, once per due date', async () => {
   const operator = await signIn('OPERATOR');
   const asha = await signIn('MEMBER', { phone: '+919876543210' });

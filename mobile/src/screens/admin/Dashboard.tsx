@@ -95,7 +95,7 @@ function Waiting({ item, onChanged }: { item: Schema<'AgingList'>['items'][numbe
       <Card>
         <Muted>
           {`Waiting ${item.daysWaiting} days · ` +
-            (item.lastRemindedAt ? `reminded ${date(item.lastRemindedAt)}` : 'not reminded yet')}
+            (item.lastRemindedAt ? `member last told ${date(item.lastRemindedAt)}` : 'no member linked yet')}
         </Muted>
         {!!member && <Muted>{[member.phone, member.email].filter(Boolean).join(' · ')}</Muted>}
         <Feedback error={action.error} />
