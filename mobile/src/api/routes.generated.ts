@@ -191,6 +191,24 @@ export const routes = {
     "query": [],
     "body": false
   },
+  "registerDevice": {
+    "method": "PUT",
+    "path": "/me/devices",
+    "query": [],
+    "body": true
+  },
+  "listNotifications": {
+    "method": "GET",
+    "path": "/me/notifications",
+    "query": [],
+    "body": false
+  },
+  "markNotificationsRead": {
+    "method": "POST",
+    "path": "/me/notifications/read",
+    "query": [],
+    "body": false
+  },
   "listCollections": {
     "method": "GET",
     "path": "/collections",

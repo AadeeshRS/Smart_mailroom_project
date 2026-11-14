@@ -427,6 +427,42 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         default: { $ref: '#/components/responses/Error' }
+  /me/devices:
+    put:
+      operationId: registerDevice
+      summary: Register this phone's Expo push token for the current session
+      description: >-
+        The token belongs to the session that registered it, so signing out, a password reset or a
+        deactivation stops its pushes. Registering a token again moves it to the current session.
+      x-permission: MEMBER
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/notifications:
+    get:
+      operationId: listNotifications
+      summary: The member's latest 30 notifications, newest first
+      x-permission: MEMBER
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationList' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/notifications/read:
+    post:
+      operationId: markNotificationsRead
+      summary: Mark all the member's notifications read
+      x-permission: MEMBER
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
   /collections:
     get:
       operationId: listCollections
@@ -611,6 +647,30 @@ components:
       required: [ok]
       properties:
         ok: { type: boolean, enum: [true] }
+    DeviceInput:
+      type: object
+      additionalProperties: false
+      required: [token, platform]
+      properties:
+        token: { type: string, maxLength: 120, pattern: '^Expo(nent)?PushToken\[[A-Za-z0-9_-]{1,100}\]$' }
+        platform: { type: string, enum: [ios, android] }
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, type, title, body, createdAt, read]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        type: { type: string, description: 'ARRIVAL, REMINDER, COLLECTED or RETURNED' }
+        title: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+    NotificationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
     RegisterInput:
       type: object
       additionalProperties: false
