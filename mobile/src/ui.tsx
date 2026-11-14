@@ -13,7 +13,6 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRuntime } from './runtime';
 import { useEntrance, usePressScale } from './motion';
 
 export const colors = {
@@ -68,16 +67,6 @@ export const styles = StyleSheet.create({
     color: colors.ink,
   },
 });
-export function DemoBanner() {
-  const { mode } = useRuntime();
-  return (
-    <View style={{ flexShrink: 0, backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 9 }}>
-      <Text style={{ color: '#F0F5DB', textAlign: 'center', fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>
-        {mode === 'http' ? 'HTTP DEMO · POSTGRESQL · SYNTHETIC DATA ONLY' : 'DEMO MODE · SYNTHETIC DATA ONLY'}
-      </Text>
-    </View>
-  );
-}
 export function Page({
   title,
   subtitle,
@@ -91,23 +80,12 @@ export function Page({
   back?: () => void;
   modal?: boolean;
 }) {
-  const { online, toggleOnline } = useRuntime();
   const entrance = useEntrance(title);
   return (
     <SafeAreaView style={styles.page} edges={modal ? ['top', 'left', 'right'] : ['left', 'right']}>
-      {modal && <DemoBanner />}
-      {!online && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={toggleOnline}
-          style={{ padding: 12, backgroundColor: colors.amberPale }}
-        >
-          <Text style={styles.text}>Simulated offline · Tap to reconnect</Text>
-        </Pressable>
-      )}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, minHeight: 0 }}>
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-          {back && <Button label="‹ Back" variant="quiet" onPress={back} />}
+          {!!back && <Button label="‹ Back" variant="quiet" onPress={back} />}
           <Animated.View
             testID="page-heading-motion"
             style={{
@@ -156,7 +134,8 @@ export function Button({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
-        accessibilityState={{ disabled: disabled || busy, busy }}
+        aria-disabled={disabled || busy}
+        aria-busy={busy}
         disabled={disabled || busy}
         onPress={onPress}
         onPressIn={onPressIn}
@@ -280,11 +259,14 @@ export function Choice<T extends string>({
   values,
   value,
   onChange,
+  names,
 }: {
   label: string;
   values: readonly T[];
   value: T;
   onChange: (value: T) => void;
+  /** Display names; defaults to a humanised value. */
+  names?: Partial<Record<T, string>>;
 }) {
   return (
     <View style={{ gap: 9 }}>
@@ -294,8 +276,8 @@ export function Choice<T extends string>({
           <Pressable
             key={item}
             accessibilityRole="radio"
-            accessibilityLabel={human(item)}
-            accessibilityState={{ checked: value === item }}
+            accessibilityLabel={names?.[item] ?? human(item)}
+            aria-checked={value === item}
             onPress={() => onChange(item)}
             style={{
               borderWidth: 1,
@@ -306,7 +288,9 @@ export function Choice<T extends string>({
               minHeight: 48,
             }}
           >
-            <Text style={{ color: colors.ink, fontWeight: value === item ? '700' : '400' }}>{human(item)}</Text>
+            <Text style={{ color: colors.ink, fontWeight: value === item ? '700' : '400' }}>
+              {names?.[item] ?? human(item)}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -326,7 +310,7 @@ export function Check({
     <Pressable
       accessibilityRole="checkbox"
       accessibilityLabel={label}
-      accessibilityState={{ checked }}
+      aria-checked={checked}
       onPress={() => onChange(!checked)}
       style={{ ...styles.row, flexWrap: 'nowrap', minHeight: 48, paddingVertical: 8 }}
     >

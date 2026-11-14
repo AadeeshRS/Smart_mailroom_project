@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+
 process.loadEnvFile('../api/.env.test');
 let problems: string[];
 test.beforeEach(async ({ page }) => {
@@ -11,41 +12,46 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(() => {
   expect(problems).toEqual([]);
 });
-async function login(page: Page, role: 'student' | 'staff') {
-  await page
-    .getByRole('button', {
-      name: role === 'student' ? 'Asha Rao · Student · DEMO1001' : 'Mira Sen · Mailroom staff',
-      exact: true,
-    })
-    .click();
-  await page.getByLabel('Demo passcode', { exact: true }).fill(process.env.DEMO_PASSCODE!);
-  await page.getByRole('button', { name: 'Sign in to demo', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: role === 'student' ? 'Hello, Asha.' : 'At the mailroom.', exact: true }),
-  ).toBeVisible();
+
+/** Screens underneath in the navigation stack stay mounted but hidden; only target the visible one. */
+const field = (page: Page, label: string) => page.getByLabel(label, { exact: true }).filter({ visible: true });
+const heading = (page: Page, name: string) => page.getByRole('heading', { name, exact: true });
+async function signIn(page: Page, email: string, password = process.env.SEED_PASSWORD!) {
+  await field(page, 'College email').fill(email);
+  await field(page, 'Password').fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
+
 test('development screens do not render empty text directly inside native Views', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Demonstration login', exact: true })).toBeVisible();
-  expect(problems).toEqual([]);
-  await login(page, 'student');
-  await page.getByRole('button', { name: 'Register an expected order', exact: true }).click();
-  await page.getByRole('button', { name: 'Where do I find my order ID?', exact: true }).click();
-  await expect(page.getByText(/Open Amazon and go to Your Orders/)).toBeVisible();
+  await expect(heading(page, 'Sign in')).toBeVisible();
+  await page.getByRole('button', { name: 'Create an account', exact: true }).click();
+  await expect(heading(page, 'Create your account')).toBeVisible();
+  await page.getByRole('radio', { name: 'College staff', exact: true }).click();
+  await expect(field(page, 'Staff ID')).toBeVisible();
   await page.getByRole('button', { name: '‹ Back', exact: true }).click();
-  await page.getByRole('tab', { name: /Account/ }).click();
-  await page.getByRole('button', { name: 'Log out', exact: true }).click();
-  await login(page, 'staff');
-  await page.getByRole('button', { name: 'Receive a parcel', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Classified identifier value', exact: true })).toHaveValue('');
-  await page.getByRole('button', { name: 'Review intake before saving', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Review physical intake', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Forgot password, or set up an invited account', exact: true }).click();
+  await field(page, 'Email').fill('nobody@college.example');
+  await page.getByRole('button', { name: 'Email me a code', exact: true }).click();
+  await expect(field(page, 'New password')).toBeVisible();
+  await page.goto('/verify-email?email=nobody%40college.example');
+  await expect(heading(page, 'Check your email')).toBeVisible();
+  for (const role of ['member', 'operator', 'admin']) {
+    await page.goto('/login');
+    await signIn(page, `${role}@college.example`);
+    await expect(heading(page, 'Profile')).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(heading(page, 'Sign in')).toBeVisible();
+  }
 });
+
 test('button motion settles and respects a live reduced-motion preference change', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/');
-  // Exercise a local selection button without submitting an empty login request.
-  const button = page.getByRole('button', { name: 'Asha Rao · Student · DEMO1001', exact: true });
+  // A failed sign-in stays on this screen, so the same button can be pressed again.
+  await field(page, 'College email').fill('nobody@college.example');
+  await field(page, 'Password').fill('not-a-password');
+  const button = page.getByRole('button', { name: 'Sign in', exact: true });
   const surface = button.locator('..');
   const scale = () => surface.evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
   await button.hover();
@@ -53,9 +59,9 @@ test('button motion settles and respects a live reduced-motion preference change
   await expect.poll(scale).toBeLessThan(0.99);
   await page.mouse.up();
   await expect.poll(scale).toBe(1);
+  await expect(page.getByText('Wrong email or password.', { exact: true })).toBeVisible();
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const heading = page.getByTestId('page-heading-motion').filter({ visible: true });
-  await expect(heading).toHaveCSS('opacity', '1');
+  await expect(page.getByTestId('page-heading-motion').filter({ visible: true })).toHaveCSS('opacity', '1');
   await button.hover();
   await page.mouse.down();
   const reducedFrames = await surface.evaluate(async element => {
@@ -69,7 +75,6 @@ test('button motion settles and respects a live reduced-motion preference change
   expect(reducedFrames.every(value => value === 1)).toBe(true);
   await page.mouse.up();
   // Navigation with reduced motion must leave the content immediately readable.
-  await login(page, 'student');
-  await page.getByRole('button', { name: 'Register an expected order', exact: true }).click();
+  await page.getByRole('button', { name: 'Create an account', exact: true }).click();
   await expect(page.getByTestId('page-heading-motion').filter({ visible: true })).toHaveCSS('opacity', '1');
 });

@@ -14,12 +14,11 @@ export type Input<K extends keyof operations> = (operations[K] extends { request
   : Record<never, never>) &
   Params<operations[K], 'path'> &
   Params<operations[K], 'query'>;
-export type Output<K extends keyof operations> = operations[K] extends { responses: { 200: infer R } }
-  ? Json<R>
+type Success<R> = R extends { 200: infer V } ? V : R extends { 202: infer V } ? V : never;
+export type Output<K extends keyof operations> = operations[K] extends { responses: infer R }
+  ? Json<Success<R>>
   : never;
-/** Both HTTP and mock adapters implement this generated-operation interface.
- * Authentication context belongs to the adapter, never a caller-supplied role/student ID.
- */
+/** One function per contract operation. Who is calling comes from the session token, never the input. */
 export type MailroomService = { [K in keyof operations]: (input: Input<K>) => Promise<Output<K>> };
 
 export class ServiceError extends Error {
@@ -28,17 +27,10 @@ export class ServiceError extends Error {
     readonly code: Schema<'ErrorCode'>,
     message: string,
     readonly retryable = false,
-    requestId = 'demo-local',
+    requestId = 'local',
   ) {
     super(message);
     this.name = 'ServiceError';
     this.envelope = { error: { code, message, retryable, requestId } };
   }
 }
-
-export const DEMO_ACCOUNTS = [
-  { id: 'usr_asha', name: 'Asha Rao', detail: 'Student · DEMO1001', email: 'asha@students.example.invalid' },
-  { id: 'usr_neel', name: 'Neel Shah', detail: 'Student · DEMO1002', email: 'neel@students.example.invalid' },
-  { id: 'usr_staff', name: 'Mira Sen', detail: 'Mailroom staff', email: 'mira@staff.example.invalid' },
-] as const;
-export const DEMO_PASSCODE = 'mailroom-demo';

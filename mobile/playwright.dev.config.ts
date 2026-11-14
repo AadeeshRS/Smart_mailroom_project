@@ -17,7 +17,7 @@ export default defineConfig({
     {
       command: 'node --env-file=.env.test --import tsx src/server.ts',
       cwd: '../api',
-      url: 'http://127.0.0.1:3100/v1/session',
+      url: 'http://127.0.0.1:3100/readyz',
       env: { PORT: '3100', HOST: '127.0.0.1', CORS_ORIGINS: 'http://localhost:8083' },
       reuseExistingServer: false,
       timeout: 90_000,

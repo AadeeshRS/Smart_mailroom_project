@@ -1,5 +1,7 @@
 /* global __dirname */
-// Test-only supervisor, never imported by the API or shipped in app bundles.
+// Test-only supervisor, never imported by the API or shipped in app bundles. It seeds the test database,
+// runs the API on port 3100, and on 3101 serves the latest emailed code per address (read from the
+// API's console email provider) plus POST /restart.
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
@@ -12,17 +14,25 @@ const env = {
   HOST: '127.0.0.1',
   CORS_ORIGINS: 'http://127.0.0.1:8082,http://localhost:8082',
 };
+const codes = new Map();
+let output = '';
 let child;
 async function start() {
   child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
     cwd,
     env,
     windowsHide: true,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  child.stdout.on('data', chunk => {
+    process.stdout.write(chunk);
+    output = (output + chunk).slice(-4096);
+    for (const [, email, code] of output.matchAll(/\[email to (\S+)\][^\n]*\nYour code is (\d{6})/g))
+      codes.set(email, code);
   });
   for (let n = 0; n < 100; n++) {
     try {
-      if ((await fetch('http://127.0.0.1:3100/v1/session')).status === 401) return;
+      if ((await fetch('http://127.0.0.1:3100/readyz')).ok) return;
     } catch {
       /* starting */
     }
@@ -48,9 +58,14 @@ seed.on('exit', async code => {
   await start();
   http
     .createServer(async (request, response) => {
-      if (request.method === 'POST' && request.url === '/restart') {
+      const url = new URL(request.url, 'http://127.0.0.1');
+      if (request.method === 'POST' && url.pathname === '/restart') {
         await stop();
         await start();
+      }
+      if (url.pathname === '/code') {
+        response.writeHead(codes.has(url.searchParams.get('email')) ? 200 : 404);
+        return response.end(codes.get(url.searchParams.get('email')) ?? '');
       }
       response.writeHead(200);
       response.end('Test supervisor ready');
