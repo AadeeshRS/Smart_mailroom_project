@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 
 process.loadEnvFile('../api/.env.test');
@@ -171,4 +172,46 @@ test('a member requests a parcel with a delivery OTP; the operator sees it when 
   await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
   await page.getByRole('tab', { name: /Requests/ }).click();
   await expect(page.getByText('It’s at the mailroom. Collect it from Home.', { exact: true })).toBeVisible();
+});
+
+test('a member taps Collect now; the operator verifies the code, checks the ID card and hands the parcel over', async ({
+  page,
+}) => {
+  // A parcel assigned to the member by hand, whose label carries another name.
+  const operator = await apiCall('/auth/login', { email: 'operator@college.example', password: PASSWORD });
+  const member = await apiCall('/auth/login', { email: 'member@college.example', password: PASSWORD });
+  const awb = `EE${String(Date.now()).slice(-9)}IN`;
+  const parcel = await apiCall(
+    '/parcels',
+    { id: randomUUID(), awb, shelf: 'G1', labelName: 'Somebody Else' },
+    operator.token,
+  );
+  await apiCall(`/parcels/${parcel.id}/assign`, { userId: member.user.id }, operator.token);
+
+  await page.goto('/login');
+  await signIn(page, 'member@college.example');
+  await page.getByRole('button', { name: 'Collect now', exact: true }).click();
+  const otp = (await page.getByLabel(/^Your code /).textContent()) ?? '';
+  expect(otp).toMatch(/^\d{6}$/);
+  await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+  await signOut(page);
+
+  // The operator's app pops the member up by itself.
+  await signIn(page, 'operator@college.example');
+  await expect(page.getByRole('heading', { name: 'Test Member', exact: true })).toBeVisible();
+  await field(page, 'Code from the member').fill(otp);
+  await page.getByRole('button', { name: 'Verify code', exact: true }).click();
+  await page.getByRole('checkbox', { name: `Handed over ${awb}`, exact: true }).click();
+  await expect(page.getByText(/A label name doesn’t match Test Member/)).toBeVisible();
+  const handOver = page.getByRole('button', { name: 'Hand over 1 parcel', exact: true });
+  await expect(handOver).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'Checked ID card', exact: true }).click();
+  await handOver.click();
+  await expect(page.getByText('Handed over to Test Member.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await signOut(page);
+
+  await signIn(page, 'member@college.example');
+  await page.getByRole('tab', { name: /Past/ }).click();
+  await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
 });

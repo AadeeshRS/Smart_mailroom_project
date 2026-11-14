@@ -2,8 +2,10 @@ import { expect, it } from 'vitest';
 import {
   carrierName,
   cleanOtp,
+  countdown,
   intakeBody,
   matchText,
+  memberLine,
   parcelCode,
   phoneUnused,
   requestBody,
@@ -120,4 +122,9 @@ it('builds request bodies and says where a request stands', () => {
   expect(requestText(request)).toMatch(/checking it’s yours/);
   expect(requestText({ ...request, parcel: { ...parcel, status: 'IN_MAILROOM' } })).toMatch(/Collect it from Home/);
   expect(requestText({ ...request, status: 'OPEN' })).toBe('Waiting for it to arrive.');
+});
+
+it('formats a countdown and a member line', () => {
+  expect([countdown(899_001), countdown(60_000), countdown(-5)]).toEqual(['15:00', '1:00', '0:00']);
+  expect(memberLine({ idNumber: '23CS1', hostelName: null, roomNumber: 'B-2' })).toBe('23CS1 · room B-2');
 });

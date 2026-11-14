@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Text } from 'react-native';
 import type { Schema } from '../../api/service';
 import { useAction } from '../../hooks';
-import { CARRIERS, intakeBody, matchText, type Draft } from '../../parcels';
+import { CARRIERS, intakeBody, matchText, memberLine, type Draft } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
 import { Body, Button, Card, Choice, Feedback, Field, Heading, Muted, Notice, Page, date, styles } from '../../ui';
 
@@ -107,11 +107,7 @@ function RequestBanner({ request }: { request: Schema<'LookupRequest'> }) {
   return (
     <Card>
       <Heading>Requested by {member.name}</Heading>
-      <Muted>
-        {[member.idNumber, member.hostelName, member.roomNumber && `room ${member.roomNumber}`]
-          .filter(Boolean)
-          .join(' · ')}
-      </Muted>
+      <Muted>{memberLine(member)}</Muted>
       {deliveryOtp ? (
         <>
           <Body>Delivery OTP: read it out to the delivery partner.</Body>

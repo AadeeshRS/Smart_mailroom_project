@@ -95,3 +95,13 @@ export function requestText(request: Schema<'MyRequest'>) {
     RETURNED: 'Returned to the sender.',
   }[request.parcel.status];
 }
+
+/** A member's ID, hostel and room on one line, for operators. */
+export const memberLine = (m: Pick<Schema<'MemberSummary'>, 'idNumber' | 'hostelName' | 'roomNumber'>) =>
+  [m.idNumber, m.hostelName, m.roomNumber && `room ${m.roomNumber}`].filter(Boolean).join(' · ');
+
+/** Time left as m:ss, never below 0:00. */
+export function countdown(ms: number) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
