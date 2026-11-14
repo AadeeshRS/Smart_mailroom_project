@@ -14,7 +14,7 @@ export function MemberHome() {
       {!!ready.data && !items.length && (
         <Empty
           title="Nothing waiting"
-          detail="When a parcel with your phone number or email arrives, it shows up here and you get a notification."
+          detail="When a parcel you requested, or one with your phone number or email, arrives, it shows up here and you get a notification."
         />
       )}
       {items.map(parcel => (

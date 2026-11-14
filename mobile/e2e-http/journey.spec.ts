@@ -134,3 +134,41 @@ test('an operator logs a parcel from its label and the member with that phone se
   await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
   await expect(page.getByText(/^India Post · arrived/)).toBeVisible();
 });
+
+test('a member requests a parcel with a delivery OTP; the operator sees it when scanning and it links', async ({
+  page,
+}) => {
+  const awb = `TBA${String(Date.now()).slice(-12).padStart(12, '0')}`;
+  await page.goto('/login');
+  await signIn(page, 'member@college.example');
+  await page.getByRole('tab', { name: /Requests/ }).click();
+  await field(page, 'AWB / tracking number').fill(awb);
+  await field(page, 'Delivery OTP (optional)').fill('48 21');
+  await page.getByRole('button', { name: 'Add request', exact: true }).click();
+  await expect(page.getByText(`Added ${awb}. Waiting for it to arrive.`, { exact: true })).toBeVisible();
+  await signOut(page);
+
+  await signIn(page, 'operator@college.example');
+  await field(page, 'AWB or order ID').fill(awb);
+  await page.getByRole('button', { name: 'Look up', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Requested by Test Member', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Delivery OTP 4 8 2 1', { exact: true })).toHaveText('4821');
+  await field(page, 'Phone').fill('98XXXXXX10');
+  await field(page, 'Shelf').fill('E2E');
+  await page.getByRole('button', { name: 'Save parcel', exact: true }).click();
+  await expect(page.getByText(/^Test Member .*\(their request\)$/)).toBeVisible();
+
+  // A masked phone with no request behind it: the operator is told to link the parcel another way.
+  await page.getByRole('button', { name: 'Scan the next parcel', exact: true }).click();
+  await field(page, 'AWB or order ID').fill(`X${awb}`);
+  await page.getByRole('button', { name: 'Look up', exact: true }).click();
+  await field(page, 'Phone').fill('98XXXXXX10');
+  await page.getByRole('button', { name: 'Save parcel', exact: true }).click();
+  await expect(page.getByText(/The phone wasn’t used for matching \(masked or incomplete\)/)).toBeVisible();
+  await signOut(page);
+
+  await signIn(page, 'member@college.example');
+  await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: /Requests/ }).click();
+  await expect(page.getByText('It’s at the mailroom. Collect it from Home.', { exact: true })).toBeVisible();
+});

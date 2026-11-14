@@ -1,5 +1,15 @@
 import { expect, it } from 'vitest';
-import { carrierName, intakeBody, matchText, parcelCode, phoneUnused, type Draft } from '../src/parcels';
+import {
+  carrierName,
+  cleanOtp,
+  intakeBody,
+  matchText,
+  parcelCode,
+  phoneUnused,
+  requestBody,
+  requestText,
+  type Draft,
+} from '../src/parcels';
 
 const draft: Draft = {
   id: '6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d',
@@ -80,4 +90,34 @@ it('says who a parcel belongs to, or why it has nobody', () => {
   expect(phoneUnused(draft, base)).toBe(true);
   expect(phoneUnused(draft, { ...base, labelPhone: '+919876543210' })).toBe(false);
   expect(phoneUnused({ ...draft, labelPhone: ' ' }, base)).toBe(false);
+});
+
+it('builds request bodies and says where a request stands', () => {
+  expect(requestBody({ awb: ' EE1 ', orderId: ' ', deliveryOtp: ' 48 21 ' })).toEqual({
+    awb: 'EE1',
+    orderId: undefined,
+    deliveryOtp: '4821',
+  });
+  expect(cleanOtp('  ')).toBe(null);
+  const request = {
+    id: 'r',
+    awb: 'EE1',
+    orderId: null,
+    carrier: null,
+    deliveryOtp: null,
+    status: 'MATCHED',
+    createdAt: '2026-11-14T00:00:00.000Z',
+    expiresAt: '2026-12-14T00:00:00.000Z',
+  } as const;
+  const parcel = {
+    id: 'p',
+    awb: 'EE1',
+    orderId: null,
+    carrier: null,
+    receivedAt: request.createdAt,
+    collectedAt: null,
+  };
+  expect(requestText(request)).toMatch(/checking it’s yours/);
+  expect(requestText({ ...request, parcel: { ...parcel, status: 'IN_MAILROOM' } })).toMatch(/Collect it from Home/);
+  expect(requestText({ ...request, status: 'OPEN' })).toBe('Waiting for it to arrive.');
 });

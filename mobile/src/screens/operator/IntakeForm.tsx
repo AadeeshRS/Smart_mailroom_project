@@ -1,10 +1,11 @@
 import { randomUUID } from 'expo-crypto';
 import { useState } from 'react';
+import { Text } from 'react-native';
 import type { Schema } from '../../api/service';
 import { useAction } from '../../hooks';
 import { CARRIERS, intakeBody, matchText, type Draft } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
-import { Button, Card, Choice, Feedback, Field, Heading, Notice, Page, date } from '../../ui';
+import { Body, Button, Card, Choice, Feedback, Field, Heading, Muted, Notice, Page, date, styles } from '../../ui';
 
 const CARRIER_CHOICES = [...(Object.keys(CARRIERS) as (keyof typeof CARRIERS)[]), 'UNKNOWN'] as const;
 
@@ -53,6 +54,7 @@ export function IntakeForm({
           isn’t the same parcel.
         </Notice>
       )}
+      {!!lookup.request && <RequestBanner request={lookup.request} />}
       <Card>
         <Choice
           label="This code is"
@@ -96,5 +98,33 @@ export function IntakeForm({
         <Button label="Save parcel" onPress={submit} busy={save.busy} disabled={!draft.shelf.trim()} />
       </Card>
     </Page>
+  );
+}
+
+/** W8: the member's open request for this code, with the delivery OTP to read out to the delivery partner. */
+function RequestBanner({ request }: { request: Schema<'LookupRequest'> }) {
+  const { member, deliveryOtp } = request;
+  return (
+    <Card>
+      <Heading>Requested by {member.name}</Heading>
+      <Muted>
+        {[member.idNumber, member.hostelName, member.roomNumber && `room ${member.roomNumber}`]
+          .filter(Boolean)
+          .join(' · ')}
+      </Muted>
+      {deliveryOtp ? (
+        <>
+          <Body>Delivery OTP: read it out to the delivery partner.</Body>
+          <Text
+            style={[styles.title, { letterSpacing: 6 }]}
+            accessibilityLabel={`Delivery OTP ${[...deliveryOtp].join(' ')}`}
+          >
+            {deliveryOtp}
+          </Text>
+        </>
+      ) : (
+        <Muted>The member didn’t add a delivery OTP.</Muted>
+      )}
+    </Card>
   );
 }

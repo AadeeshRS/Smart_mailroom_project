@@ -70,3 +70,28 @@ export function intakeBody(draft: Draft): Schema<'IntakeInput'> {
     note: value(draft.note),
   };
 }
+
+/** A delivery OTP as typed (spaces dropped), or null when blank. */
+export const cleanOtp = (text: string) => text.replace(/\s/g, '') || null;
+
+export type RequestDraft = { awb: string; orderId: string; deliveryOtp: string };
+
+/** The create-request body: blank optional fields are left out. */
+export const requestBody = (draft: RequestDraft): Schema<'RequestInput'> => ({
+  awb: draft.awb.trim(),
+  orderId: draft.orderId.trim() || undefined,
+  deliveryOtp: cleanOtp(draft.deliveryOtp) ?? undefined,
+});
+
+/** Where a member's request stands, in a sentence. */
+export function requestText(request: Schema<'MyRequest'>) {
+  if (request.status === 'OPEN') return 'Waiting for it to arrive.';
+  if (request.status === 'CANCELLED') return 'Cancelled.';
+  if (request.status === 'EXPIRED') return 'Expired before it arrived.';
+  if (!request.parcel) return 'It arrived. The mailroom is checking it’s yours.';
+  return {
+    IN_MAILROOM: 'It’s at the mailroom. Collect it from Home.',
+    COLLECTED: 'Collected.',
+    RETURNED: 'Returned to the sender.',
+  }[request.parcel.status];
+}
