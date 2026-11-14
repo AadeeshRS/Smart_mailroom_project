@@ -100,5 +100,59 @@ export const routes = {
     "path": "/admin/hostels/{hostelId}",
     "query": [],
     "body": true
+  },
+  "lookupParcel": {
+    "method": "GET",
+    "path": "/parcels/lookup",
+    "query": [
+      "code"
+    ],
+    "body": false
+  },
+  "listParcels": {
+    "method": "GET",
+    "path": "/parcels",
+    "query": [
+      "q",
+      "status",
+      "unmatched",
+      "cursor",
+      "limit"
+    ],
+    "body": false
+  },
+  "intakeParcel": {
+    "method": "POST",
+    "path": "/parcels",
+    "query": [],
+    "body": true
+  },
+  "getParcel": {
+    "method": "GET",
+    "path": "/parcels/{parcelId}",
+    "query": [],
+    "body": false
+  },
+  "assignParcel": {
+    "method": "POST",
+    "path": "/parcels/{parcelId}/assign",
+    "query": [],
+    "body": true
+  },
+  "searchMembers": {
+    "method": "GET",
+    "path": "/members",
+    "query": [
+      "q"
+    ],
+    "body": false
+  },
+  "listMyParcels": {
+    "method": "GET",
+    "path": "/me/parcels",
+    "query": [
+      "view"
+    ],
+    "body": false
   }
 } as const;

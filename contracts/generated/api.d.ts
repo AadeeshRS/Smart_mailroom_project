@@ -256,6 +256,121 @@ export interface paths {
         patch: operations["updateHostel"];
         trace?: never;
     };
+    "/parcels/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a scanned code is, its likely carrier, and parcels already logged with it
+         * @description The code is normalised (trimmed, uppercase, spaces removed). `kind` tells an order ID from an AWB by pattern; `carrier` is null when the format doesn't identify one. The operator can override both before saving.
+         */
+        get: operations["lookupParcel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parcels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search parcels, newest first (keyset pages)
+         * @description `q` matches the AWB, order ID, label name, label phone, recipient name or shelf. `unmatched=true` keeps parcels with no recipient.
+         */
+        get: operations["listParcels"];
+        put?: never;
+        /**
+         * Log a parcel from its label, then match it to a member
+         * @description `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already saved instead of creating a second one. At least one of `awb` and `orderId` is required. Matching links the parcel to the single verified member whose phone, alternate phone, college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
+         */
+        post: operations["intakeParcel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parcels/{parcelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A parcel with its audit history */
+        get: operations["getParcel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parcels/{parcelId}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link an unmatched parcel to a member by hand
+         * @description Only parcels still in the mailroom with no recipient (else ALREADY_ASSIGNED or NOT_IN_MAILROOM).
+         */
+        post: operations["assignParcel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Find verified members by name, ID number, phone, room or email (at most 20) */
+        get: operations["searchMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/parcels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The member's parcels in the mailroom (ready) or already collected or returned (history) */
+        get: operations["listMyParcels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -374,8 +489,116 @@ export interface components {
         HostelList: {
             items: components["schemas"]["Hostel"][];
         };
+        Code60: string;
         /** @enum {string} */
-        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
+        Carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "AMAZON" | "DTDC" | "XPRESSBEES" | "SHADOWFAX" | "INDIA_POST" | "OTHER";
+        /** @enum {string} */
+        CodeKind: "AWB" | "ORDER_ID";
+        /** @enum {string} */
+        ParcelStatus: "IN_MAILROOM" | "COLLECTED" | "RETURNED";
+        IntakeInput: {
+            /** Format: uuid */
+            id: string;
+            awb?: components["schemas"]["Code60"];
+            orderId?: components["schemas"]["Code60"];
+            carrier?: components["schemas"]["Carrier"];
+            labelName?: string;
+            /** @description Kept only if it's a valid number */
+            labelPhone?: string;
+            labelEmail?: string;
+            labelHostel?: string;
+            labelRoom?: string;
+            shelf: string;
+            note?: string;
+        };
+        AssignInput: {
+            userId: components["schemas"]["Id"];
+        };
+        MemberSummary: {
+            id: components["schemas"]["Id"];
+            name: string;
+            email: string;
+            idNumber: string | null;
+            phone: string | null;
+            hostelName: string | null;
+            roomNumber: string | null;
+        };
+        MemberList: {
+            items: components["schemas"]["MemberSummary"][];
+        };
+        OperatorParcel: {
+            id: string;
+            awb: string | null;
+            orderId: string | null;
+            /** @enum {string|null} */
+            carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "AMAZON" | "DTDC" | "XPRESSBEES" | "SHADOWFAX" | "INDIA_POST" | "OTHER" | null;
+            labelName: string | null;
+            labelPhone: string | null;
+            labelEmail: string | null;
+            labelHostel: string | null;
+            labelRoom: string | null;
+            shelf: string;
+            note: string | null;
+            status: components["schemas"]["ParcelStatus"];
+            /** @description The linked member, or null (Ajv needs nullable next to type, so this repeats MemberSummary) */
+            recipient: {
+                id: components["schemas"]["Id"];
+                name: string;
+                email: string;
+                idNumber: string | null;
+                phone: string | null;
+                hostelName: string | null;
+                roomNumber: string | null;
+            } | null;
+            /** @enum {string|null} */
+            matchSource: "REQUEST" | "CONTACT" | "MANUAL" | null;
+            /** @enum {string|null} */
+            matchFlag: "AMBIGUOUS" | "CONFLICT" | null;
+            /** Format: date-time */
+            receivedAt: string;
+            /** @description The operator's name */
+            receivedBy: string;
+            /** Format: date-time */
+            collectedAt: string | null;
+        };
+        ParcelPage: {
+            items: components["schemas"]["OperatorParcel"][];
+            nextCursor?: components["schemas"]["Id"];
+        };
+        ParcelDetail: {
+            parcel: components["schemas"]["OperatorParcel"];
+            history: {
+                /** Format: date-time */
+                at: string;
+                actor: string;
+                action: string;
+                detail: string;
+            }[];
+        };
+        Lookup: {
+            code: string;
+            kind: components["schemas"]["CodeKind"];
+            /** @enum {string|null} */
+            carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "AMAZON" | "DTDC" | "XPRESSBEES" | "SHADOWFAX" | "INDIA_POST" | "OTHER" | null;
+            /** @description Parcels already logged with this code, newest first (at most 5). Non-empty means a likely duplicate. */
+            existing: components["schemas"]["OperatorParcel"][];
+        };
+        MyParcel: {
+            id: string;
+            awb: string | null;
+            orderId: string | null;
+            carrier: string | null;
+            status: components["schemas"]["ParcelStatus"];
+            /** Format: date-time */
+            receivedAt: string;
+            /** Format: date-time */
+            collectedAt: string | null;
+        };
+        MyParcelList: {
+            items: components["schemas"]["MyParcel"][];
+        };
+        /** @enum {string} */
+        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
         ErrorEnvelope: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -422,6 +645,15 @@ export interface components {
                 "application/json": components["schemas"]["User"];
             };
         };
+        /** @description A parcel as operators see it */
+        Parcel: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["OperatorParcel"];
+            };
+        };
         /** @description A hostel */
         Hostel: {
             headers: {
@@ -445,6 +677,7 @@ export interface components {
         Q: string;
         Cursor: components["schemas"]["Id"];
         Limit: number;
+        ParcelId: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: never;
@@ -730,6 +963,161 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Hostel"];
+            default: components["responses"]["Error"];
+        };
+    };
+    lookupParcel: {
+        parameters: {
+            query: {
+                code: components["schemas"]["Code60"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lookup result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lookup"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listParcels: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["Q"];
+                status?: components["schemas"]["ParcelStatus"];
+                unmatched?: boolean;
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of parcels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParcelPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    intakeParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntakeInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Parcel"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parcelId: components["parameters"]["ParcelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Parcel and history, oldest event first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParcelDetail"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    assignParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parcelId: components["parameters"]["ParcelId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Parcel"];
+            default: components["responses"]["Error"];
+        };
+    };
+    searchMembers: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching members, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMyParcels: {
+        parameters: {
+            query: {
+                view: "ready" | "history";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Newest first; history shows the latest 100 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyParcelList"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

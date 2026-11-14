@@ -230,11 +230,129 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Hostel' }
         default: { $ref: '#/components/responses/Error' }
+  /parcels/lookup:
+    get:
+      operationId: lookupParcel
+      summary: What a scanned code is, its likely carrier, and parcels already logged with it
+      description: >-
+        The code is normalised (trimmed, uppercase, spaces removed). `kind` tells an order ID from an
+        AWB by pattern; `carrier` is null when the format doesn't identify one. The operator can
+        override both before saving.
+      x-permission: OPERATOR
+      parameters:
+        - { name: code, in: query, required: true, schema: { $ref: '#/components/schemas/Code60' } }
+      responses:
+        '200':
+          description: Lookup result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lookup' }
+        default: { $ref: '#/components/responses/Error' }
+  /parcels:
+    get:
+      operationId: listParcels
+      summary: Search parcels, newest first (keyset pages)
+      description: >-
+        `q` matches the AWB, order ID, label name, label phone, recipient name or shelf.
+        `unmatched=true` keeps parcels with no recipient.
+      x-permission: OPERATOR
+      parameters:
+        - { $ref: '#/components/parameters/Q' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ParcelStatus' } }
+        - { name: unmatched, in: query, schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: One page of parcels
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParcelPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: intakeParcel
+      summary: Log a parcel from its label, then match it to a member
+      description: >-
+        `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already
+        saved instead of creating a second one. At least one of `awb` and `orderId` is required.
+        Matching links the parcel to the single verified member whose phone, alternate phone,
+        college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
+      x-permission: OPERATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IntakeInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Parcel' }
+        default: { $ref: '#/components/responses/Error' }
+  /parcels/{parcelId}:
+    get:
+      operationId: getParcel
+      summary: A parcel with its audit history
+      x-permission: OPERATOR
+      parameters:
+        - { $ref: '#/components/parameters/ParcelId' }
+      responses:
+        '200':
+          description: Parcel and history, oldest event first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParcelDetail' }
+        default: { $ref: '#/components/responses/Error' }
+  /parcels/{parcelId}/assign:
+    post:
+      operationId: assignParcel
+      summary: Link an unmatched parcel to a member by hand
+      description: Only parcels still in the mailroom with no recipient (else ALREADY_ASSIGNED or NOT_IN_MAILROOM).
+      x-permission: OPERATOR
+      parameters:
+        - { $ref: '#/components/parameters/ParcelId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Parcel' }
+        default: { $ref: '#/components/responses/Error' }
+  /members:
+    get:
+      operationId: searchMembers
+      summary: Find verified members by name, ID number, phone, room or email (at most 20)
+      x-permission: OPERATOR
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        '200':
+          description: Matching members, by name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberList' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/parcels:
+    get:
+      operationId: listMyParcels
+      summary: The member's parcels in the mailroom (ready) or already collected or returned (history)
+      x-permission: MEMBER
+      parameters:
+        - name: view
+          in: query
+          required: true
+          schema: { type: string, enum: [ready, history] }
+      responses:
+        '200':
+          description: Newest first; history shows the latest 100
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyParcelList' }
+        default: { $ref: '#/components/responses/Error' }
 components:
   parameters:
     Q: { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
     Cursor: { name: cursor, in: query, schema: { $ref: '#/components/schemas/Id' } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    ParcelId: { name: parcelId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
   responses:
     Ok:
       description: Done
@@ -256,6 +374,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/User' }
+    Parcel:
+      description: A parcel as operators see it
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OperatorParcel' }
     Hostel:
       description: A hostel
       content:
@@ -443,6 +566,160 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Hostel' } }
+    Code60: { type: string, minLength: 1, maxLength: 60 }
+    Carrier:
+      type: string
+      enum: [DELHIVERY, BLUEDART, EKART, AMAZON, DTDC, XPRESSBEES, SHADOWFAX, INDIA_POST, OTHER]
+    CodeKind: { type: string, enum: [AWB, ORDER_ID] }
+    ParcelStatus: { type: string, enum: [IN_MAILROOM, COLLECTED, RETURNED] }
+    IntakeInput:
+      type: object
+      additionalProperties: false
+      required: [id, shelf]
+      properties:
+        id: { type: string, format: uuid }
+        awb: { $ref: '#/components/schemas/Code60' }
+        orderId: { $ref: '#/components/schemas/Code60' }
+        carrier: { $ref: '#/components/schemas/Carrier' }
+        labelName: { type: string, minLength: 1, maxLength: 100 }
+        labelPhone: { type: string, minLength: 1, maxLength: 30, description: Kept only if it's a valid number }
+        labelEmail: { type: string, minLength: 1, maxLength: 254 }
+        labelHostel: { type: string, minLength: 1, maxLength: 100 }
+        labelRoom: { type: string, minLength: 1, maxLength: 20 }
+        shelf: { type: string, minLength: 1, maxLength: 20 }
+        note: { type: string, minLength: 1, maxLength: 200 }
+    AssignInput:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId: { $ref: '#/components/schemas/Id' }
+    MemberSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, idNumber, phone, hostelName, roomNumber]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        name: { type: string }
+        email: { type: string }
+        idNumber: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        hostelName: { type: string, nullable: true }
+        roomNumber: { type: string, nullable: true }
+    MemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MemberSummary' } }
+    OperatorParcel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - awb
+        - orderId
+        - carrier
+        - labelName
+        - labelPhone
+        - labelEmail
+        - labelHostel
+        - labelRoom
+        - shelf
+        - note
+        - status
+        - recipient
+        - matchSource
+        - matchFlag
+        - receivedAt
+        - receivedBy
+        - collectedAt
+      properties:
+        id: { type: string }
+        awb: { type: string, nullable: true }
+        orderId: { type: string, nullable: true }
+        carrier: { type: string, nullable: true, enum: [DELHIVERY, BLUEDART, EKART, AMAZON, DTDC, XPRESSBEES, SHADOWFAX, INDIA_POST, OTHER, null] }
+        labelName: { type: string, nullable: true }
+        labelPhone: { type: string, nullable: true }
+        labelEmail: { type: string, nullable: true }
+        labelHostel: { type: string, nullable: true }
+        labelRoom: { type: string, nullable: true }
+        shelf: { type: string }
+        note: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/ParcelStatus' }
+        recipient:
+          description: The linked member, or null (Ajv needs nullable next to type, so this repeats MemberSummary)
+          nullable: true
+          type: object
+          additionalProperties: false
+          required: [id, name, email, idNumber, phone, hostelName, roomNumber]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            name: { type: string }
+            email: { type: string }
+            idNumber: { type: string, nullable: true }
+            phone: { type: string, nullable: true }
+            hostelName: { type: string, nullable: true }
+            roomNumber: { type: string, nullable: true }
+        matchSource: { type: string, nullable: true, enum: [REQUEST, CONTACT, MANUAL, null] }
+        matchFlag: { type: string, nullable: true, enum: [AMBIGUOUS, CONFLICT, null] }
+        receivedAt: { type: string, format: date-time }
+        receivedBy: { type: string, description: The operator's name }
+        collectedAt: { type: string, format: date-time, nullable: true }
+    ParcelPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OperatorParcel' } }
+        nextCursor: { $ref: '#/components/schemas/Id' }
+    ParcelDetail:
+      type: object
+      additionalProperties: false
+      required: [parcel, history]
+      properties:
+        parcel: { $ref: '#/components/schemas/OperatorParcel' }
+        history:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [at, actor, action, detail]
+            properties:
+              at: { type: string, format: date-time }
+              actor: { type: string }
+              action: { type: string }
+              detail: { type: string }
+    Lookup:
+      type: object
+      additionalProperties: false
+      required: [code, kind, carrier, existing]
+      properties:
+        code: { type: string }
+        kind: { $ref: '#/components/schemas/CodeKind' }
+        carrier: { type: string, nullable: true, enum: [DELHIVERY, BLUEDART, EKART, AMAZON, DTDC, XPRESSBEES, SHADOWFAX, INDIA_POST, OTHER, null] }
+        existing:
+          description: Parcels already logged with this code, newest first (at most 5). Non-empty means a likely duplicate.
+          type: array
+          items: { $ref: '#/components/schemas/OperatorParcel' }
+    MyParcel:
+      type: object
+      additionalProperties: false
+      required: [id, awb, orderId, carrier, status, receivedAt, collectedAt]
+      properties:
+        id: { type: string }
+        awb: { type: string, nullable: true }
+        orderId: { type: string, nullable: true }
+        carrier: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/ParcelStatus' }
+        receivedAt: { type: string, format: date-time }
+        collectedAt: { type: string, format: date-time, nullable: true }
+    MyParcelList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MyParcel' } }
     ErrorCode:
       type: string
       enum:
@@ -460,6 +737,8 @@ components:
         - NAME_TAKEN
         - LAST_ADMIN
         - SELF_CHANGE
+        - ALREADY_ASSIGNED
+        - NOT_IN_MAILROOM
         - RATE_LIMITED
         - NETWORK
         - INTERNAL
@@ -478,6 +757,8 @@ components:
         NAME_TAKEN: 409
         LAST_ADMIN: 409
         SELF_CHANGE: 409
+        ALREADY_ASSIGNED: 409
+        NOT_IN_MAILROOM: 409
         RATE_LIMITED: 429
         NETWORK: 503
         INTERNAL: 500
@@ -512,7 +793,20 @@ components:
       summary: Clearing the alternate phone
       x-schema: UpdateMeInput
       value: { roomNumber: B-215, altPhone: null }
+    Intake:
+      summary: A parcel logged from its label
+      x-schema: IntakeInput
+      value:
+        id: 6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d
+        awb: EE123456789IN
+        labelName: Asha Rao
+        labelPhone: '98765 43210'
+        shelf: A3
 x-invalid-examples:
+  - schema: IntakeInput
+    value: { id: not-a-uuid, awb: X1, shelf: A1 }
+  - schema: IntakeInput
+    value: { id: 6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d, awb: X1 }
   - schema: UpdateMeInput
     value: { email: someone.else@college.example }
   - schema: UpdateMeInput
