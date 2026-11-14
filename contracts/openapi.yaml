@@ -189,8 +189,8 @@ paths:
       operationId: updateUser
       summary: Change a user's role or deactivate them (revokes their sessions)
       description: >-
-        An admin can't change their own role or deactivate themselves, and the last active admin
-        can't be demoted or deactivated (LAST_ADMIN).
+        An admin can't change their own role or deactivate themselves (SELF_CHANGE), and the last
+        active admin can't be demoted or deactivated (LAST_ADMIN).
       x-permission: ADMIN
       parameters:
         - { name: userId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
@@ -459,6 +459,7 @@ components:
         - EMAIL_TAKEN
         - NAME_TAKEN
         - LAST_ADMIN
+        - SELF_CHANGE
         - RATE_LIMITED
         - NETWORK
         - INTERNAL
@@ -476,6 +477,7 @@ components:
         EMAIL_TAKEN: 409
         NAME_TAKEN: 409
         LAST_ADMIN: 409
+        SELF_CHANGE: 409
         RATE_LIMITED: 429
         NETWORK: 503
         INTERNAL: 500

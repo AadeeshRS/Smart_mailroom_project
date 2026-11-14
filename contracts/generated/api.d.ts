@@ -217,7 +217,7 @@ export interface paths {
         head?: never;
         /**
          * Change a user's role or deactivate them (revokes their sessions)
-         * @description An admin can't change their own role or deactivate themselves, and the last active admin can't be demoted or deactivated (LAST_ADMIN).
+         * @description An admin can't change their own role or deactivate themselves (SELF_CHANGE), and the last active admin can't be demoted or deactivated (LAST_ADMIN).
          */
         patch: operations["updateUser"];
         trace?: never;
@@ -375,7 +375,7 @@ export interface components {
             items: components["schemas"]["Hostel"][];
         };
         /** @enum {string} */
-        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
+        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
         ErrorEnvelope: {
             error: {
                 code: components["schemas"]["ErrorCode"];
