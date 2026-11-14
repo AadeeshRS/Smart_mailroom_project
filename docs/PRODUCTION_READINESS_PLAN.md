@@ -1,5 +1,7 @@
 # Smart Mailroom: Production Readiness Review and Plan
 
+> **Superseded.** The implementation plan is now [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md), the source of truth. This review is kept for its F-numbered findings, which Phase 8 of that plan references. Its phases (A-G) and decisions (D1-D10) are no longer followed.
+
 | | |
 |---|---|
 | Date | 2026-11-14 |

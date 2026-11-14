@@ -91,8 +91,13 @@ Adapt these rather than rewriting them.
 | Contract codegen tooling | `contracts/tooling/*` | Unchanged; the `x-roles` metadata becomes `x-permission` |
 | Barcode scanner | `mobile/src/Scanner.tsx` | Intake scanning |
 | UI components, `useResource` and `useAction` hooks | `mobile/src/ui.tsx`, `mobile/src/runtime.tsx` | All screens |
+| Accessible motion: `MotionProvider` (follows the OS reduce-motion setting), `useEntrance`, `usePressScale` | `mobile/src/motion.tsx` | Screen entrances and button feedback; no animation library |
+| `SuccessMark` (animated checkmark) | `mobile/src/ui.tsx` | Confirmations: intake saved, handover completed |
 | HTTP client | `mobile/src/api/http.ts` | Kept, with the token persisted in SecureStore |
 | PostgreSQL integration-test pattern, the HTTP browser-test supervisor | `api/tests/`, `mobile/e2e-http/` | v2 tests |
+| Dev-renderer browser harness: `playwright.dev.config.ts`, `api/tests/dev-http.ts`, `e2e-dev/` (API on 3100, Metro on 8083) | `mobile/`, `api/tests/` | Catches React Native development-only warnings (empty text) that web exports strip |
+
+**Rule for every screen:** conditional rendering uses `{!!x && …}`, never `{x && …}`. A falsy string or `0` rendered bare inside a `View` triggers React Native's empty-text error; the dev-renderer suite checks for it.
 
 ## 4. Architecture
 
