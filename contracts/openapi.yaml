@@ -237,7 +237,8 @@ paths:
       description: >-
         The code is normalised (trimmed, uppercase, spaces removed). `kind` tells an order ID from an
         AWB by pattern; `carrier` is null when the format doesn't identify one. The operator can
-        override both before saving.
+        override both before saving. `request` is the open member request for this code, with the
+        delivery OTP to read out to the delivery partner; this is the only place the OTP is shown.
       x-permission: OPERATOR
       parameters:
         - { name: code, in: query, required: true, schema: { $ref: '#/components/schemas/Code60' } }
@@ -275,8 +276,11 @@ paths:
       description: >-
         `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already
         saved instead of creating a second one. At least one of `awb` and `orderId` is required.
-        Matching links the parcel to the single verified member whose phone, alternate phone,
-        college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
+        Matching first looks for an open member request with this AWB (or, failing that, this order ID):
+        it links to the requester and clears the delivery OTP, unless a different single member owns the
+        label's contact, which sets matchFlag CONFLICT instead. With no request, the parcel links to the
+        single verified member whose phone, alternate phone, college email or personal email matches the
+        label; more than one sets matchFlag AMBIGUOUS.
       x-permission: OPERATOR
       requestBody:
         required: true
@@ -347,12 +351,66 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MyParcelList' }
         default: { $ref: '#/components/responses/Error' }
+  /me/requests:
+    get:
+      operationId: listMyRequests
+      summary: The member's requests, newest first (latest 100)
+      x-permission: MEMBER
+      responses:
+        '200':
+          description: Requests
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyRequestList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createRequest
+      summary: Ask for a parcel by its AWB; links it at once if it's already in the mailroom
+      description: >-
+        One open request per AWB across all members (else REQUEST_EXISTS), and at most 20 open per
+        member. If a parcel with this AWB (or order ID) is already in the mailroom and not linked to
+        anyone, matching runs now and the request comes back MATCHED. Open requests expire after
+        REQUEST_EXPIRY_DAYS (default 30), which clears the delivery OTP.
+      x-permission: MEMBER
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Request' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/requests/{requestId}:
+    patch:
+      operationId: updateRequest
+      summary: Set or clear the delivery OTP of an open request (else REQUEST_CLOSED)
+      x-permission: MEMBER
+      parameters:
+        - { $ref: '#/components/parameters/RequestId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRequestInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Request' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: cancelRequest
+      summary: Cancel an open request and clear its delivery OTP (else REQUEST_CLOSED)
+      x-permission: MEMBER
+      parameters:
+        - { $ref: '#/components/parameters/RequestId' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
 components:
   parameters:
     Q: { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
     Cursor: { name: cursor, in: query, schema: { $ref: '#/components/schemas/Id' } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     ParcelId: { name: parcelId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    RequestId: { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
   responses:
     Ok:
       description: Done
@@ -379,6 +437,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/OperatorParcel' }
+    Request:
+      description: A request as its member sees it
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/MyRequest' }
     Hostel:
       description: A hostel
       content:
@@ -702,6 +765,17 @@ components:
           description: Parcels already logged with this code, newest first (at most 5). Non-empty means a likely duplicate.
           type: array
           items: { $ref: '#/components/schemas/OperatorParcel' }
+        request: { $ref: '#/components/schemas/LookupRequest' }
+    LookupRequest:
+      type: object
+      additionalProperties: false
+      required: [id, member, orderId, deliveryOtp, createdAt]
+      properties:
+        id: { type: string }
+        member: { $ref: '#/components/schemas/MemberSummary' }
+        orderId: { type: string, nullable: true }
+        deliveryOtp: { type: string, nullable: true, description: Read it out to the delivery partner }
+        createdAt: { type: string, format: date-time }
     MyParcel:
       type: object
       additionalProperties: false
@@ -720,6 +794,46 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/MyParcel' } }
+    DeliveryOtp: { type: string, pattern: '^[0-9]{4,8}$', description: The OTP the courier sent the member }
+    RequestStatus: { type: string, enum: [OPEN, MATCHED, CANCELLED, EXPIRED] }
+    RequestInput:
+      type: object
+      additionalProperties: false
+      required: [awb]
+      properties:
+        awb: { $ref: '#/components/schemas/Code60' }
+        orderId: { $ref: '#/components/schemas/Code60' }
+        deliveryOtp: { $ref: '#/components/schemas/DeliveryOtp' }
+    UpdateRequestInput:
+      type: object
+      additionalProperties: false
+      required: [deliveryOtp]
+      properties:
+        deliveryOtp: { type: string, pattern: '^[0-9]{4,8}$', nullable: true }
+    MyRequest:
+      type: object
+      additionalProperties: false
+      required: [id, awb, orderId, carrier, deliveryOtp, status, createdAt, expiresAt]
+      properties:
+        id: { type: string }
+        awb: { type: string }
+        orderId: { type: string, nullable: true }
+        carrier: { type: string, nullable: true }
+        deliveryOtp: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/RequestStatus' }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        parcel:
+          description: >-
+            Present once the parcel is linked to this member. A MATCHED request without it means the
+            label points to someone else and the mailroom is checking.
+          allOf: [{ $ref: '#/components/schemas/MyParcel' }]
+    MyRequestList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MyRequest' } }
     ErrorCode:
       type: string
       enum:
@@ -739,6 +853,8 @@ components:
         - SELF_CHANGE
         - ALREADY_ASSIGNED
         - NOT_IN_MAILROOM
+        - REQUEST_EXISTS
+        - REQUEST_CLOSED
         - RATE_LIMITED
         - NETWORK
         - INTERNAL
@@ -759,6 +875,8 @@ components:
         SELF_CHANGE: 409
         ALREADY_ASSIGNED: 409
         NOT_IN_MAILROOM: 409
+        REQUEST_EXISTS: 409
+        REQUEST_CLOSED: 409
         RATE_LIMITED: 429
         NETWORK: 503
         INTERNAL: 500
@@ -802,7 +920,15 @@ components:
         labelName: Asha Rao
         labelPhone: '98765 43210'
         shelf: A3
+    Request:
+      summary: A member asking for a parcel, with the courier's delivery OTP
+      x-schema: RequestInput
+      value: { awb: EE123456789IN, deliveryOtp: '4821' }
 x-invalid-examples:
+  - schema: RequestInput
+    value: { orderId: OD123456789012 }
+  - schema: RequestInput
+    value: { awb: EE123456789IN, deliveryOtp: 12ab }
   - schema: IntakeInput
     value: { id: not-a-uuid, awb: X1, shelf: A1 }
   - schema: IntakeInput

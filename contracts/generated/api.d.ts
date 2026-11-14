@@ -265,7 +265,7 @@ export interface paths {
         };
         /**
          * What a scanned code is, its likely carrier, and parcels already logged with it
-         * @description The code is normalised (trimmed, uppercase, spaces removed). `kind` tells an order ID from an AWB by pattern; `carrier` is null when the format doesn't identify one. The operator can override both before saving.
+         * @description The code is normalised (trimmed, uppercase, spaces removed). `kind` tells an order ID from an AWB by pattern; `carrier` is null when the format doesn't identify one. The operator can override both before saving. `request` is the open member request for this code, with the delivery OTP to read out to the delivery partner; this is the only place the OTP is shown.
          */
         get: operations["lookupParcel"];
         put?: never;
@@ -291,7 +291,7 @@ export interface paths {
         put?: never;
         /**
          * Log a parcel from its label, then match it to a member
-         * @description `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already saved instead of creating a second one. At least one of `awb` and `orderId` is required. Matching links the parcel to the single verified member whose phone, alternate phone, college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
+         * @description `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already saved instead of creating a second one. At least one of `awb` and `orderId` is required. Matching first looks for an open member request with this AWB (or, failing that, this order ID): it links to the requester and clears the delivery OTP, unless a different single member owns the label's contact, which sets matchFlag CONFLICT instead. With no request, the parcel links to the single verified member whose phone, alternate phone, college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
          */
         post: operations["intakeParcel"];
         delete?: never;
@@ -369,6 +369,45 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/me/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The member's requests, newest first (latest 100) */
+        get: operations["listMyRequests"];
+        put?: never;
+        /**
+         * Ask for a parcel by its AWB; links it at once if it's already in the mailroom
+         * @description One open request per AWB across all members (else REQUEST_EXISTS), and at most 20 open per member. If a parcel with this AWB (or order ID) is already in the mailroom and not linked to anyone, matching runs now and the request comes back MATCHED. Open requests expire after REQUEST_EXPIRY_DAYS (default 30), which clears the delivery OTP.
+         */
+        post: operations["createRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel an open request and clear its delivery OTP (else REQUEST_CLOSED) */
+        delete: operations["cancelRequest"];
+        options?: never;
+        head?: never;
+        /** Set or clear the delivery OTP of an open request (else REQUEST_CLOSED) */
+        patch: operations["updateRequest"];
         trace?: never;
     };
 }
@@ -582,6 +621,16 @@ export interface components {
             carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "AMAZON" | "DTDC" | "XPRESSBEES" | "SHADOWFAX" | "INDIA_POST" | "OTHER" | null;
             /** @description Parcels already logged with this code, newest first (at most 5). Non-empty means a likely duplicate. */
             existing: components["schemas"]["OperatorParcel"][];
+            request?: components["schemas"]["LookupRequest"];
+        };
+        LookupRequest: {
+            id: string;
+            member: components["schemas"]["MemberSummary"];
+            orderId: string | null;
+            /** @description Read it out to the delivery partner */
+            deliveryOtp: string | null;
+            /** Format: date-time */
+            createdAt: string;
         };
         MyParcel: {
             id: string;
@@ -597,8 +646,37 @@ export interface components {
         MyParcelList: {
             items: components["schemas"]["MyParcel"][];
         };
+        /** @description The OTP the courier sent the member */
+        DeliveryOtp: string;
         /** @enum {string} */
-        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
+        RequestStatus: "OPEN" | "MATCHED" | "CANCELLED" | "EXPIRED";
+        RequestInput: {
+            awb: components["schemas"]["Code60"];
+            orderId?: components["schemas"]["Code60"];
+            deliveryOtp?: components["schemas"]["DeliveryOtp"];
+        };
+        UpdateRequestInput: {
+            deliveryOtp: string | null;
+        };
+        MyRequest: {
+            id: string;
+            awb: string;
+            orderId: string | null;
+            carrier: string | null;
+            deliveryOtp: string | null;
+            status: components["schemas"]["RequestStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Present once the parcel is linked to this member. A MATCHED request without it means the label points to someone else and the mailroom is checking. */
+            parcel?: components["schemas"]["MyParcel"];
+        };
+        MyRequestList: {
+            items: components["schemas"]["MyRequest"][];
+        };
+        /** @enum {string} */
+        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "REQUEST_EXISTS" | "REQUEST_CLOSED" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
         ErrorEnvelope: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -654,6 +732,15 @@ export interface components {
                 "application/json": components["schemas"]["OperatorParcel"];
             };
         };
+        /** @description A request as its member sees it */
+        Request: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["MyRequest"];
+            };
+        };
         /** @description A hostel */
         Hostel: {
             headers: {
@@ -678,6 +765,7 @@ export interface components {
         Cursor: components["schemas"]["Id"];
         Limit: number;
         ParcelId: components["schemas"]["Id"];
+        RequestId: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: never;
@@ -1118,6 +1206,78 @@ export interface operations {
                     "application/json": components["schemas"]["MyParcelList"];
                 };
             };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMyRequests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyRequestList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Request"];
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: components["parameters"]["RequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["Ok"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: components["parameters"]["RequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRequestInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Request"];
             default: components["responses"]["Error"];
         };
     };

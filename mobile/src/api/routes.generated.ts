@@ -154,5 +154,29 @@ export const routes = {
       "view"
     ],
     "body": false
+  },
+  "listMyRequests": {
+    "method": "GET",
+    "path": "/me/requests",
+    "query": [],
+    "body": false
+  },
+  "createRequest": {
+    "method": "POST",
+    "path": "/me/requests",
+    "query": [],
+    "body": true
+  },
+  "updateRequest": {
+    "method": "PATCH",
+    "path": "/me/requests/{requestId}",
+    "query": [],
+    "body": true
+  },
+  "cancelRequest": {
+    "method": "DELETE",
+    "path": "/me/requests/{requestId}",
+    "query": [],
+    "body": false
   }
 } as const;
