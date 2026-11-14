@@ -208,5 +208,33 @@ export const routes = {
     "path": "/collections/{collectionId}/complete",
     "query": [],
     "body": true
+  },
+  "getStats": {
+    "method": "GET",
+    "path": "/admin/stats",
+    "query": [
+      "dayStart"
+    ],
+    "body": false
+  },
+  "listAging": {
+    "method": "GET",
+    "path": "/admin/parcels/aging",
+    "query": [
+      "olderThanDays"
+    ],
+    "body": false
+  },
+  "remindParcel": {
+    "method": "POST",
+    "path": "/admin/parcels/{parcelId}/remind",
+    "query": [],
+    "body": false
+  },
+  "returnParcel": {
+    "method": "POST",
+    "path": "/admin/parcels/{parcelId}/return",
+    "query": [],
+    "body": false
   }
 } as const;

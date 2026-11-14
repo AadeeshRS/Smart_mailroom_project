@@ -482,6 +482,63 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         default: { $ref: '#/components/responses/Error' }
+  /admin/stats:
+    get:
+      operationId: getStats
+      summary: Dashboard counts for one day, plus what's waiting now
+      description: >-
+        `dayStart` is local midnight on the admin's phone, so the day follows the mailroom's time zone
+        with no server setting; the day is the 24 hours from it. Waiting parcels are bucketed by age:
+        under 3 days, 3 days up to WAITING_TOO_LONG_DAYS (default 7), and longer.
+      x-permission: ADMIN
+      parameters:
+        - { name: dayStart, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminStats' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/parcels/aging:
+    get:
+      operationId: listAging
+      summary: Parcels waiting too long, oldest first, with the recipient's contact details (at most 200)
+      x-permission: ADMIN
+      parameters:
+        - name: olderThanDays
+          in: query
+          description: Defaults to WAITING_TOO_LONG_DAYS (7)
+          schema: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        '200':
+          description: Waiting parcels
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgingList' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/parcels/{parcelId}/remind:
+    post:
+      operationId: remindParcel
+      summary: Remind the linked member that their parcel is waiting
+      description: Only parcels in the mailroom (NOT_IN_MAILROOM) that are linked to a member (VALIDATION).
+      x-permission: ADMIN
+      parameters:
+        - { $ref: '#/components/parameters/ParcelId' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/parcels/{parcelId}/return:
+    post:
+      operationId: returnParcel
+      summary: Mark a parcel returned to the sender; the linked member is told
+      description: Only parcels still in the mailroom (else NOT_IN_MAILROOM).
+      x-permission: ADMIN
+      parameters:
+        - { $ref: '#/components/parameters/ParcelId' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
 components:
   parameters:
     Q: { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
@@ -975,6 +1032,41 @@ components:
           uniqueItems: true
           items: { $ref: '#/components/schemas/Id' }
         idChecked: { type: boolean, description: The operator checked the member's college ID card }
+    AdminStats:
+      type: object
+      additionalProperties: false
+      required: [received, collected, waiting, waitingByAge, tooLongDays, unmatched, openRequests]
+      properties:
+        received: { type: integer, description: Parcels received that day }
+        collected: { type: integer, description: Parcels collected that day }
+        waiting: { type: integer, description: Parcels in the mailroom now }
+        waitingByAge:
+          type: object
+          additionalProperties: false
+          required: [underThreeDays, upToLimit, overLimit]
+          properties:
+            underThreeDays: { type: integer }
+            upToLimit: { type: integer, description: 3 days up to tooLongDays }
+            overLimit: { type: integer, description: Longer than tooLongDays }
+        tooLongDays: { type: integer }
+        unmatched: { type: integer, description: Parcels in the mailroom linked to nobody }
+        openRequests: { type: integer }
+    AgingList:
+      type: object
+      additionalProperties: false
+      required: [olderThanDays, items]
+      properties:
+        olderThanDays: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [parcel, daysWaiting, lastRemindedAt]
+            properties:
+              parcel: { $ref: '#/components/schemas/OperatorParcel' }
+              daysWaiting: { type: integer }
+              lastRemindedAt: { type: string, format: date-time, nullable: true }
     ErrorCode:
       type: string
       enum:

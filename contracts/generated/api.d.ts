@@ -488,6 +488,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard counts for one day, plus what's waiting now
+         * @description `dayStart` is local midnight on the admin's phone, so the day follows the mailroom's time zone with no server setting; the day is the 24 hours from it. Waiting parcels are bucketed by age: under 3 days, 3 days up to WAITING_TOO_LONG_DAYS (default 7), and longer.
+         */
+        get: operations["getStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/parcels/aging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Parcels waiting too long, oldest first, with the recipient's contact details (at most 200) */
+        get: operations["listAging"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/parcels/{parcelId}/remind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remind the linked member that their parcel is waiting
+         * @description Only parcels in the mailroom (NOT_IN_MAILROOM) that are linked to a member (VALIDATION).
+         */
+        post: operations["remindParcel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/parcels/{parcelId}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a parcel returned to the sender; the linked member is told
+         * @description Only parcels still in the mailroom (else NOT_IN_MAILROOM).
+         */
+        post: operations["returnParcel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -794,6 +871,34 @@ export interface components {
             parcelIds: components["schemas"]["Id"][];
             /** @description The operator checked the member's college ID card */
             idChecked: boolean;
+        };
+        AdminStats: {
+            /** @description Parcels received that day */
+            received: number;
+            /** @description Parcels collected that day */
+            collected: number;
+            /** @description Parcels in the mailroom now */
+            waiting: number;
+            waitingByAge: {
+                underThreeDays: number;
+                /** @description 3 days up to tooLongDays */
+                upToLimit: number;
+                /** @description Longer than tooLongDays */
+                overLimit: number;
+            };
+            tooLongDays: number;
+            /** @description Parcels in the mailroom linked to nobody */
+            unmatched: number;
+            openRequests: number;
+        };
+        AgingList: {
+            olderThanDays: number;
+            items: {
+                parcel: components["schemas"]["OperatorParcel"];
+                daysWaiting: number;
+                /** Format: date-time */
+                lastRemindedAt: string | null;
+            }[];
         };
         /** @enum {string} */
         ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "REQUEST_EXISTS" | "REQUEST_CLOSED" | "CODE_EXPIRED" | "ALREADY_COLLECTED" | "ID_CHECK_REQUIRED" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
@@ -1498,6 +1603,83 @@ export interface operations {
                 "application/json": components["schemas"]["CompleteCollectionInput"];
             };
         };
+        responses: {
+            200: components["responses"]["Ok"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getStats: {
+        parameters: {
+            query: {
+                dayStart: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStats"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAging: {
+        parameters: {
+            query?: {
+                /** @description Defaults to WAITING_TOO_LONG_DAYS (7) */
+                olderThanDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Waiting parcels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgingList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    remindParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parcelId: components["parameters"]["ParcelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["Ok"];
+            default: components["responses"]["Error"];
+        };
+    };
+    returnParcel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                parcelId: components["parameters"]["ParcelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: components["responses"]["Ok"];
             default: components["responses"]["Error"];

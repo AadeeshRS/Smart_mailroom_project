@@ -322,7 +322,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 | `POST /parcels/{id}/assign` · `GET /members?q=` | OPERATOR | Manually link a parcel · search members by name, ID, phone or room |
 | `GET /collections` | OPERATOR | Giveaway queue: each open code once, with the member (name, ID, hostel/room) and their waiting parcels (label name, whether it matches, shelf) |
 | `POST /collections/{id}/verify` · `POST /collections/{id}/complete` | OPERATOR | `{ otp }` → verify (5 wrong attempts cancel the code) · `{ parcelIds, idChecked }` → hand over the ticked parcels |
-| `GET /admin/stats?date=` | ADMIN | Received and collected that day, pending total, pending by age (0-2, 3-7, >7 days), unmatched, open requests |
+| `GET /admin/stats?dayStart=` | ADMIN | Received and collected that day (`dayStart` is local midnight on the phone, so no server time zone), waiting total, waiting by age (under 3 days, 3 to `WAITING_TOO_LONG_DAYS`, longer), unmatched, open requests |
 | `GET /admin/parcels/aging?olderThanDays=` | ADMIN | Parcels waiting too long, with recipient contact details |
 | `POST /admin/parcels/{id}/remind` · `POST /admin/parcels/{id}/return` | ADMIN | Send a reminder push · mark returned to sender |
 | `GET /admin/users` · `POST /admin/users` · `PATCH /admin/users/{id}` | ADMIN | List and search · create an operator or admin (invite code emailed) · change role or deactivate (deactivating revokes their sessions) |
