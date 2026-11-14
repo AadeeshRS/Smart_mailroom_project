@@ -18,9 +18,10 @@ paths:
       operationId: register
       summary: Create a member account with a college email; emails a verification code
       description: >-
-        Only emails in the configured college domains are accepted. Registering an email that
-        already exists returns the same 202 (no account enumeration): an unverified account is
-        updated with these details and gets a fresh code; a verified one is left unchanged.
+        Only emails in the configured college domains are accepted. The member must accept the
+        privacy notice; the time is recorded. Registering an email that already exists returns the
+        same 202 (no account enumeration): an unverified account is updated with these details and
+        gets a fresh code; a verified one is left unchanged.
       x-permission: PUBLIC
       requestBody:
         required: true
@@ -674,10 +675,14 @@ components:
     RegisterInput:
       type: object
       additionalProperties: false
-      required: [email, password, name, memberType, idNumber, phone]
+      required: [email, password, name, memberType, idNumber, phone, acceptPrivacyNotice]
       properties:
         email: { $ref: '#/components/schemas/Email' }
         password: { $ref: '#/components/schemas/Password' }
+        acceptPrivacyNotice:
+          type: boolean
+          enum: [true]
+          description: The member ticked that they have read the privacy notice
         name: { $ref: '#/components/schemas/Name' }
         memberType: { $ref: '#/components/schemas/MemberType' }
         idNumber: { $ref: '#/components/schemas/IdNumber' }
@@ -1210,6 +1215,7 @@ components:
         phone: '98765 43210'
         hostelId: hst_example
         roomNumber: B-214
+        acceptPrivacyNotice: true
     MeEdit:
       summary: Clearing the alternate phone
       x-schema: UpdateMeInput

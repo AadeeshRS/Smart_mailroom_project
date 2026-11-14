@@ -95,7 +95,7 @@ Brevo** (that means a new sender in `api/src/modules/notifications/email.ts`).
    | `NODE_VERSION` | `24` (matches `engines` in `api/package.json`) |
    | `PORT` | Don't set: Render provides it |
    | `CORS_ORIGINS` | Don't set: the phone app doesn't need it (only a hosted web build would) |
-   | `REQUEST_EXPIRY_DAYS`, `COLLECTION_CODE_MINUTES`, `WAITING_TOO_LONG_DAYS`, `REMINDER_AFTER_DAYS`, `RATE_*` | Don't set unless changing the defaults (30 days, 15 minutes, 7 days, 3 days, the limits below) |
+   | `REQUEST_EXPIRY_DAYS`, `COLLECTION_CODE_MINUTES`, `WAITING_TOO_LONG_DAYS`, `REMINDER_AFTER_DAYS`, `RETENTION_DAYS`, `RATE_*` | Don't set unless changing the defaults (30 days, 15 minutes, 7 days, 3 days, 90 days, the limits below) |
    | `SEED_PASSWORD`, `CONTRACT_PATH` | Don't set |
 
 6. Click **Deploy Web Service** and watch **Logs**. The build ends with `tsc`. On start, `npm run migrate` shows
@@ -150,6 +150,7 @@ and from then on codes are emailed and no longer logged.
 | `COLLECTION_CODE_MINUTES` | no | Default 15: how long a Collect now code is valid |
 | `WAITING_TOO_LONG_DAYS` | no | Default 7: the admin dashboard's "waiting too long" line |
 | `REMINDER_AFTER_DAYS` | no | Default 3: a linked parcel waiting this long gets an automatic reminder, then one every 3 days |
+| `RETENTION_DAYS` | no | Default 90: label details (name, phone, email, hostel, room, note) on a collected or returned parcel are erased this many days later. The app's privacy notice states the number (`mobile/src/screens/PrivacyNotice.tsx`): change both together |
 | `CONTRACT_PATH` | no | Only if `contracts/openapi.yaml` isn't shipped; by default the API finds it above its folder |
 
 The per-IP limits are loose because the campus shares one public IP, and every attempt counts toward them,

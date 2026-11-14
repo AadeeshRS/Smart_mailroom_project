@@ -124,6 +124,7 @@ export async function register(input: Input<'register'>, ctx: Ctx) {
     ...(await profileData(ctx, input)),
     name: input.name.trim(),
     passwordHash: await passwordHash(input.password),
+    privacyAcceptedAt: ctx.now,
     createdAt: ctx.now,
   };
   const user = await saveProfile(() =>

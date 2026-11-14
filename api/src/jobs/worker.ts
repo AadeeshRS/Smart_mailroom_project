@@ -23,6 +23,25 @@ export async function cleanup(db: PrismaClient, now: Date) {
   await db.user.deleteMany({ where: { role: 'MEMBER', emailVerifiedAt: null, createdAt: { lte: dayAgo } } });
 }
 
+const label = { labelName: null, labelPhone: null, labelEmail: null, labelHostel: null, labelRoom: null, note: null };
+
+/** Plan 8.5 (F36): `days` after a parcel left the mailroom (collected; returned ones count from receipt, as no
+ * return time is kept), erase everything copied from its label. The parcel, its tracking number and the
+ * append-only audit trail stay, so the record that it was handed over survives without the label's contents. */
+export async function pseudonymise(db: PrismaClient, now: Date, days: number) {
+  const before = new Date(+now - days * DAY);
+  await db.parcel.updateMany({
+    where: {
+      OR: [
+        { status: 'COLLECTED', collectedAt: { lte: before } },
+        { status: 'RETURNED', receivedAt: { lte: before } },
+      ],
+      AND: { OR: Object.keys(label).map(field => ({ [field]: { not: null } })) },
+    },
+    data: label,
+  });
+}
+
 /** One background loop per API process. ponytail: fine for one instance; run it in a separate service
  * (or take an advisory lock per run) before scaling the API out. */
 export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000) {
@@ -34,6 +53,7 @@ export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000
     const jobs = [
       () => cleanup(db, now),
       () => remindWaiting(db, now, settings.reminderAfterDays),
+      () => pseudonymise(db, now, settings.retentionDays),
       () => sendPushes(db, now),
     ];
     for (const job of jobs)

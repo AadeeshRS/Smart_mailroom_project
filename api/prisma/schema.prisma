@@ -63,27 +63,29 @@ enum PushState {
 }
 
 model User {
-  id              String      @id
-  role            Role        @default(MEMBER)
+  id                String      @id
+  role              Role        @default(MEMBER)
   /// College email for members, any email for operators. Lowercase. Can't be changed.
-  email           String      @unique
+  email             String      @unique
   /// Can't be changed by the member.
-  name            String
-  passwordHash    String?
-  emailVerifiedAt DateTime?
-  active          Boolean     @default(true)
-  memberType      MemberType?
+  name              String
+  passwordHash      String?
+  emailVerifiedAt   DateTime?
+  active            Boolean     @default(true)
+  memberType        MemberType?
   /// Enrollment or staff ID.
-  idNumber        String?     @unique
+  idNumber          String?     @unique
   /// Lowercase.
-  personalEmail   String?
+  personalEmail     String?
   /// E.164. Unique, so one person can't claim another's number.
-  phone           String?     @unique
-  altPhone        String?
-  hostelId        String?
-  hostel          Hostel?     @relation(fields: [hostelId], references: [id])
-  roomNumber      String?
-  createdAt       DateTime    @default(now())
+  phone             String?     @unique
+  altPhone          String?
+  hostelId          String?
+  hostel            Hostel?     @relation(fields: [hostelId], references: [id])
+  roomNumber        String?
+  /// When the member accepted the privacy notice at registration (DPDP: consent must be provable).
+  privacyAcceptedAt DateTime?
+  createdAt         DateTime    @default(now())
 
   codes            EmailCode[]
   sessions         Session[]

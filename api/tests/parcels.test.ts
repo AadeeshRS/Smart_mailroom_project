@@ -96,6 +96,7 @@ test('reverse triggers: verifying an email or editing a phone links parcels alre
     password: PASSWORD,
     name: 'Late',
     memberType: 'STUDENT',
+    acceptPrivacyNotice: true,
     idNumber: 'L1',
     phone: '9876500001',
   });

@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useAction } from '../../src/hooks';
+import { PrivacyNotice } from '../../src/screens/PrivacyNotice';
 import { ProfileFields } from '../../src/screens/ProfileFields';
 import { formFrom, registration } from '../../src/screens/profileForm';
 import { useSession } from '../../src/session/SessionProvider';
-import { Button, Card, Feedback, Field, Heading, Muted, Page } from '../../src/ui';
+import { Button, Card, Check, Feedback, Field, Heading, Muted, Page } from '../../src/ui';
 
 export default function Register() {
   const { api } = useSession();
@@ -13,11 +14,19 @@ export default function Register() {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [form, setForm] = useState(() => formFrom());
+  const [accepted, setAccepted] = useState(false);
   const { run, busy, error } = useAction();
-  const complete = email.trim() && name.trim() && password.length >= 8 && form.idNumber.trim() && form.phone.trim();
+  const complete =
+    accepted && email.trim() && name.trim() && password.length >= 8 && form.idNumber.trim() && form.phone.trim();
 
   async function submit() {
-    const body = { email: email.trim(), name: name.trim(), password, ...registration(form) };
+    const body = {
+      email: email.trim(),
+      name: name.trim(),
+      password,
+      ...registration(form),
+      acceptPrivacyNotice: true as const,
+    };
     if (await run(() => api.register(body)))
       router.replace({ pathname: '/verify-email', params: { email: body.email } });
   }
@@ -56,6 +65,8 @@ export default function Register() {
         <Heading>How the mailroom finds your parcels</Heading>
         <ProfileFields form={form} onChange={setForm} member />
       </Card>
+      <PrivacyNotice />
+      <Check label="I’ve read the privacy notice." checked={accepted} onChange={setAccepted} />
       <Muted>We’ll email a 6-digit code to your college email to confirm it’s yours.</Muted>
       <Feedback error={error} />
       <Button label="Create account" onPress={submit} busy={busy} disabled={!complete} />

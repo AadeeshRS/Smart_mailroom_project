@@ -54,6 +54,8 @@ test('a member registers, verifies their email, stays signed in across a reload 
   await field(page, 'Phone').fill(`9${String(Date.now()).slice(-9)}`);
   await page.getByRole('radio', { name: hostel, exact: true }).click();
   await field(page, 'Room (optional)').fill('B-214');
+  await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I’ve read the privacy notice.', exact: true }).click();
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Check your email', exact: true })).toBeVisible();
 

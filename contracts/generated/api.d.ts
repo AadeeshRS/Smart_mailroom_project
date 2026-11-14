@@ -12,7 +12,7 @@ export interface paths {
         put?: never;
         /**
          * Create a member account with a college email; emails a verification code
-         * @description Only emails in the configured college domains are accepted. Registering an email that already exists returns the same 202 (no account enumeration): an unverified account is updated with these details and gets a fresh code; a verified one is left unchanged.
+         * @description Only emails in the configured college domains are accepted. The member must accept the privacy notice; the time is recorded. Registering an email that already exists returns the same 202 (no account enumeration): an unverified account is updated with these details and gets a fresh code; a verified one is left unchanged.
          */
         post: operations["register"];
         delete?: never;
@@ -662,6 +662,11 @@ export interface components {
         RegisterInput: {
             email: components["schemas"]["Email"];
             password: components["schemas"]["Password"];
+            /**
+             * @description The member ticked that they have read the privacy notice
+             * @enum {boolean}
+             */
+            acceptPrivacyNotice: true;
             name: components["schemas"]["Name"];
             memberType: components["schemas"]["MemberType"];
             idNumber: components["schemas"]["IdNumber"];

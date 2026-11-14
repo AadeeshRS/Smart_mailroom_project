@@ -493,4 +493,5 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 | An Expo account, for the EAS project ID (`eas init`) that iOS push in Expo Go needs | Phase 6 |
 | A Firebase project and FCM credentials for Android push, and the Android package name | Phase 8 (release builds) |
 | Thresholds: **decided**, the defaults as environment variables: `REQUEST_EXPIRY_DAYS` 30, `COLLECTION_CODE_MINUTES` 15, `REMINDER_AFTER_DAYS` 3, `WAITING_TOO_LONG_DAYS` 7. The mailroom's return policy is still to be confirmed | Phase 4-7 |
+| Retention: `RETENTION_DAYS` defaults to 90 (label details erased that long after a parcel leaves). **To be confirmed** with the college, along with what happens to a closed account's details | Phase 8 (8.5) |
 | App name, icon and bundle ID | Phase 8 |

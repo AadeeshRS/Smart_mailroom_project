@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAction } from '../hooks';
 import { useSession } from '../session/SessionProvider';
 import { Body, Button, Card, Feedback, Field, Heading, Muted, Notice, Page, human } from '../ui';
+import { PrivacyNotice } from './PrivacyNotice';
 import { ProfileFields } from './ProfileFields';
 import { changes, formFrom } from './profileForm';
 
@@ -44,6 +45,7 @@ export function ProfileScreen() {
         <Button label="Save changes" onPress={submit} busy={save.busy} disabled={!Object.keys(edits).length} />
       </Card>
       <PasswordCard />
+      {member && <PrivacyNotice />}
       <Button label="Sign out" variant="danger" onPress={() => void signOut()} />
     </Page>
   );

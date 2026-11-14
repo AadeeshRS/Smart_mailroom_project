@@ -20,6 +20,8 @@ export type Config = {
   waitingTooLongDays: number;
   /** A linked parcel waiting this many days gets an automatic reminder, and another every this many days. */
   reminderAfterDays: number;
+  /** Label details on a collected or returned parcel are erased this many days later (privacy notice). */
+  retentionDays: number;
 };
 
 const count = (value: string | undefined, fallback: number, name: string) => {
@@ -67,6 +69,7 @@ export function config(env = process.env): Config {
     collectionCodeMinutes: count(env.COLLECTION_CODE_MINUTES, 15, 'COLLECTION_CODE_MINUTES'),
     waitingTooLongDays: count(env.WAITING_TOO_LONG_DAYS, 7, 'WAITING_TOO_LONG_DAYS'),
     reminderAfterDays: count(env.REMINDER_AFTER_DAYS, 3, 'REMINDER_AFTER_DAYS'),
+    retentionDays: count(env.RETENTION_DAYS, 90, 'RETENTION_DAYS'),
   };
   if (environment === 'production') {
     const missing = ['RESEND_API_KEY', 'MAIL_FROM', 'ALLOWED_EMAIL_DOMAINS'].filter(name => !env[name]?.trim());

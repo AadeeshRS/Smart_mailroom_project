@@ -12,6 +12,7 @@ const form = (email: string, extra: Partial<Input<'register'>> = {}): Input<'reg
   password: PASSWORD,
   name: 'Asha Rao',
   memberType: 'STUDENT',
+  acceptPrivacyNotice: true,
   idNumber: '23cs1001',
   phone: '98765 43210',
   ...extra,
@@ -31,6 +32,8 @@ test('register → verify → login, with normalised profile fields', async () =
   assert.equal(session.user.altPhone, '+919123456789');
   assert.equal(session.user.idNumber, '23CS1001');
   assert.equal(session.user.role, 'MEMBER');
+  const stored = await db.user.findUniqueOrThrow({ where: { id: session.user.id } });
+  assert.equal(+stored.privacyAcceptedAt!, clock.now, 'the privacy notice acceptance is recorded');
   assert.equal((await ok('getMe', {}, session.token)).id, session.user.id);
   await ok('login', { email: 'ASHA.RAO@college.example', password: PASSWORD });
 });

@@ -1,12 +1,13 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { invalidMessage, missingHandlers, operations } from '../src/app.js';
 import { phone } from '../src/core/phone.js';
 import { rate } from '../src/core/rate.js';
 import { config } from '../src/core/config.js';
 import { id } from '../src/core/security.js';
-import { cleanup } from '../src/jobs/worker.js';
-import { app, clock, db, reset, signIn } from './helpers.js';
+import { cleanup, pseudonymise } from '../src/jobs/worker.js';
+import { app, clock, db, ok, reset, signIn } from './helpers.js';
 
 beforeEach(reset);
 
@@ -46,6 +47,7 @@ test('schema-validation errors name the field in plain words, not the validatorâ
     password: 'long-enough-1',
     name: 'Asha',
     memberType: 'STUDENT',
+    acceptPrivacyNotice: true,
     idNumber: 'S1',
     phone: '9876543210',
   };
@@ -55,6 +57,8 @@ test('schema-validation errors name the field in plain words, not the validatorâ
   const { name: _name, ...noName } = valid;
   assert.equal(await register(noName), 'Name is required.');
   assert.equal(await register({ ...valid, email: 'not-an-email' }), 'Email isnâ€™t valid. Check it and try again.');
+  const { acceptPrivacyNotice: _accept, ...unaccepted } = valid;
+  assert.equal(await register(unaccepted), 'Accept privacy notice is required.');
   assert.equal(
     invalidMessage({
       validation: [{ keyword: 'maxLength', instancePath: '/idNumber', schemaPath: '', params: { limit: 40 } }],
@@ -125,4 +129,41 @@ test('config: per-IP limits default loose, read RATE_* variables, and reject jun
   for (const bad of ['0', '-1', '1.5', 'lots'])
     assert.throws(() => config({ ...base, RATE_LOGIN_PER_IP: bad }), /RATE_LOGIN_PER_IP/);
   assert.throws(() => config({ ...base, NODE_ENV: 'production' }), /RESEND_API_KEY, MAIL_FROM, ALLOWED_EMAIL_DOMAINS/);
+});
+
+test('retention: label details are erased RETENTION_DAYS after a parcel left; the parcel and its audit stay', async () => {
+  const operator = await signIn('OPERATOR');
+  const day = 86_400_000;
+  const fields = {
+    labelName: 'Asha Rao',
+    labelPhone: '9876543210',
+    labelEmail: 'asha@gmail.com',
+    labelHostel: 'Ganga',
+    labelRoom: 'B-214',
+    note: 'Fragile',
+  };
+  const intake = () =>
+    ok(
+      'intakeParcel',
+      { id: randomUUID(), shelf: 'A1', awb: `R${randomUUID().slice(0, 8)}`, ...fields },
+      operator.token,
+    );
+  const [collected, returned, recent, waiting] = [await intake(), await intake(), await intake(), await intake()];
+  const ago = (days: number) => new Date(clock.now - days * day);
+  await db.parcel.update({ where: { id: collected.id }, data: { status: 'COLLECTED', collectedAt: ago(91) } });
+  await db.parcel.update({ where: { id: returned.id }, data: { status: 'RETURNED', receivedAt: ago(91) } });
+  await db.parcel.update({ where: { id: recent.id }, data: { status: 'COLLECTED', collectedAt: ago(89) } });
+  await db.parcel.update({ where: { id: waiting.id }, data: { receivedAt: ago(200) } });
+  await pseudonymise(db, new Date(clock.now), 90);
+  const label = async (parcelId: string) => {
+    const p = await db.parcel.findUniqueOrThrow({ where: { id: parcelId } });
+    return [p.labelName, p.labelPhone, p.labelEmail, p.labelHostel, p.labelRoom, p.note];
+  };
+  const erased = [null, null, null, null, null, null];
+  assert.deepEqual(await label(collected.id), erased);
+  assert.deepEqual(await label(returned.id), erased);
+  assert.equal((await label(recent.id))[0], 'Asha Rao');
+  assert.equal((await label(waiting.id))[0], 'Asha Rao');
+  assert.equal((await db.parcel.findUniqueOrThrow({ where: { id: collected.id } })).awb, collected.awb);
+  assert.equal(await db.auditEvent.count({ where: { parcelId: collected.id, action: 'RECEIVED' } }), 1);
 });
