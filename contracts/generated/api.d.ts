@@ -291,7 +291,7 @@ export interface paths {
         put?: never;
         /**
          * Log a parcel from its label, then match it to a member
-         * @description `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already saved instead of creating a second one. At least one of `awb` and `orderId` is required. Matching first looks for an open member request with this AWB (or, failing that, this order ID): it links to the requester and clears the delivery OTP, unless a different single member owns the label's contact, which sets matchFlag CONFLICT instead. With no request, the parcel links to the single verified member whose phone, alternate phone, college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
+         * @description `id` is a UUID generated on the phone, so retrying the same intake returns the parcel already saved instead of creating a second one. At least one of `awb` and `orderId` is required. Matching first looks for an open member request with this AWB (or, failing that, this order ID): it links to the requester and clears the delivery OTP, unless the label's contact belongs only to other members, which sets matchFlag CONFLICT instead. With no request, the parcel links to the single verified member whose phone, alternate phone, college email or personal email matches the label; more than one sets matchFlag AMBIGUOUS.
          */
         post: operations["intakeParcel"];
         delete?: never;
@@ -383,7 +383,7 @@ export interface paths {
         put?: never;
         /**
          * Ask for a parcel by its AWB; links it at once if it's already in the mailroom
-         * @description One open request per AWB across all members (else REQUEST_EXISTS), and at most 20 open per member. If a parcel with this AWB (or order ID) is already in the mailroom and not linked to anyone, matching runs now and the request comes back MATCHED. Open requests expire after REQUEST_EXPIRY_DAYS (default 30), which clears the delivery OTP.
+         * @description An order ID in the AWB field is refused (VALIDATION). One open request per AWB across all members (else REQUEST_EXISTS), and at most 20 open per member. If a parcel with this AWB (or order ID) is already in the mailroom and not linked to anyone, matching runs now and the request comes back MATCHED. Open requests expire after REQUEST_EXPIRY_DAYS (default 30), which clears the delivery OTP.
          */
         post: operations["createRequest"];
         delete?: never;

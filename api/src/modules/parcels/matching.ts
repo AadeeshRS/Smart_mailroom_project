@@ -11,14 +11,19 @@ export const matchable = {
   emailVerifiedAt: { not: null },
 } satisfies Prisma.UserWhereInput;
 
-/** Verified members whose phone, alternate phone or emails match the label. Two rows are enough to know
- * whether there's exactly one. Every condition is an indexed equality. */
-export function contactOwners(tx: Tx, labelPhone: string | null, labelEmail: string | null) {
+/** Verified members whose phone, alternate phone or emails match the label (narrowed by `also`). Two rows
+ * are enough to know whether there's exactly one. Every condition is an indexed equality. */
+export function contactOwners(
+  tx: Tx,
+  labelPhone: string | null,
+  labelEmail: string | null,
+  also: Prisma.UserWhereInput = {},
+) {
   const or: Prisma.UserWhereInput[] = [];
   if (labelPhone) or.push({ phone: labelPhone }, { altPhone: labelPhone });
   if (labelEmail) or.push({ email: labelEmail }, { personalEmail: labelEmail });
   if (!or.length) return Promise.resolve([]);
-  return tx.user.findMany({ where: { ...matchable, OR: or }, select: { id: true, name: true }, take: 2 });
+  return tx.user.findMany({ where: { ...matchable, ...also, OR: or }, select: { id: true, name: true }, take: 2 });
 }
 
 const describe = (parcel: Pick<Parcel, 'awb' | 'orderId' | 'carrier'>) =>
@@ -62,9 +67,9 @@ export async function openRequest(tx: Tx, awb: string | null, orderId: string | 
   return byOrder.length === 1 ? byOrder[0] : null;
 }
 
-/** Plan §4.7 step 1: the request is used up (MATCHED, delivery OTP cleared) and the parcel links to the
- * requester, unless one other member owns the label's contact: then it's flagged CONFLICT for the operator.
- * False if another intake used the request first. */
+/** Plan §4.7 step 1: the request is used up (MATCHED, delivery OTP cleared). The parcel links to the
+ * requester if the label's contact belongs to nobody or to them (among others); if it belongs only to other
+ * members, it's flagged CONFLICT for the operator. False if another intake used the request first. */
 export async function claim(
   tx: Tx,
   parcel: Parcel,
@@ -76,8 +81,9 @@ export async function claim(
     data: { status: 'MATCHED', parcelId: parcel.id, deliveryOtp: null },
   });
   if (!count) return false;
-  const owners = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
-  if (owners.length !== 1 || owners[0].id === request.userId) {
+  const [theirs] = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail, { id: request.userId });
+  const others = theirs ? [] : await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
+  if (!others.length) {
     await link(tx, parcel, request.userId, 'REQUEST', actorId);
     return true;
   }
@@ -88,7 +94,7 @@ export async function claim(
       actorId,
       parcelId: parcel.id,
       action: 'FLAGGED',
-      detail: `Requested by ${request.user.name}, but the label contact is ${owners[0].name}'s`,
+      detail: `Requested by ${request.user.name}, but the label contact belongs to ${others.map(o => o.name).join(' and ')}`,
     },
   });
   return true;

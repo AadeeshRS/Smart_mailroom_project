@@ -105,7 +105,10 @@ test('a label contact owned by someone other than the requester flags CONFLICT f
     [made.id, 'MATCHED', null, undefined],
   );
   const { history } = await ok('getParcel', { parcelId: parcel.id }, operator.token);
-  assert.match(history.at(-1)!.detail, new RegExp(`Requested by ${bala.user.name}, but the label contact is`));
+  assert.match(
+    history.at(-1)!.detail,
+    new RegExp(`Requested by ${bala.user.name}, but the label contact belongs to ${asha.user.name}$`),
+  );
   assert.deepEqual((await ok('listMyParcels', { view: 'ready' }, asha.token)).items, []);
 
   // A profile edit by the label's owner doesn't settle it behind the operator's back; a manual assign does.
@@ -132,4 +135,29 @@ test('the worker expires open requests and clears their OTP; matched ones are un
   // The AWB is free again.
   const { token } = await signIn('MEMBER');
   assert.equal((await call('createRequest', { awb: 'E1' }, token)).status, 200);
+});
+
+test('two other members own the label contact: CONFLICT, not a link to the requester', async () => {
+  const bala = await signIn('MEMBER', { phone: '+919000000001' });
+  const chen = await signIn('MEMBER');
+  // Asha's phone is Chen's alternate too: two owners, neither of them Bala.
+  await db.user.update({ where: { id: chen.user.id }, data: { altPhone: '+919876543210' } });
+  await request({ awb: 'TWO1' }, bala.token);
+  const parcel = await intake({ awb: 'TWO1', labelPhone: '9876543210' });
+  assert.deepEqual([parcel.recipient, parcel.matchFlag], [null, 'CONFLICT']);
+  const { history } = await ok('getParcel', { parcelId: parcel.id }, operator.token);
+  assert.match(history.at(-1)!.detail, /belongs to .+ and .+$/);
+
+  // The requester among several owners still gets it.
+  await request({ awb: 'TWO2' });
+  const theirs = await intake({ awb: 'TWO2', labelPhone: '9876543210' });
+  assert.deepEqual([theirs.recipient?.id, theirs.matchSource], [asha.user.id, 'REQUEST']);
+});
+
+test('an order ID typed as the AWB is refused with a hint', async () => {
+  for (const awb of ['403-1234567-1234567', 'od123456789012345'])
+    await fails('createRequest', { awb }, 'VALIDATION', asha.token);
+  const reply = await call('createRequest', { awb: 'OD123456789012345' }, asha.token);
+  assert.match(JSON.stringify(reply.body), /That looks like an order ID\. Enter the tracking \(AWB\) number/);
+  assert.equal(await db.parcelRequest.count(), 0);
 });

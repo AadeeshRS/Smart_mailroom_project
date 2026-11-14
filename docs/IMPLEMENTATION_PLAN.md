@@ -279,9 +279,9 @@ There is **no global advisory lock**; this fixes F7 and F8 in the review. The ca
 findRecipient(parcel):
   1. request = OPEN ParcelRequest where awb = parcel.awb (or orderId = parcel.orderId when there's no AWB)
      if request:
-        contactOwner = unique member whose phone/altPhone/emails match the label
-        if contactOwner exists and contactOwner ≠ request.user → flag CONFLICT (operator decides)
-        else → link(parcel, request.user, REQUEST); request → MATCHED, deliveryOtp cleared
+        request → MATCHED, deliveryOtp cleared
+        if the label's contact belongs to nobody, or request.user is one of its owners → link(parcel, request.user, REQUEST)
+        else (it belongs only to other members) → flag CONFLICT (operator decides)
   2. else candidates = active MEMBERs where phone = labelPhone OR altPhone = labelPhone
                                     OR email = labelEmail OR personalEmail = labelEmail
      1 candidate → link(CONTACT); >1 → flag AMBIGUOUS; 0 → stays unlinked

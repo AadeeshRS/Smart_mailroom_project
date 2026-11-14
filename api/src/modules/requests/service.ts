@@ -46,6 +46,11 @@ export async function list(_input: Input<'listMyRequests'>, ctx: Ctx) {
 export async function create(input: Input<'createRequest'>, ctx: Ctx) {
   const { user } = signedIn(ctx);
   const awb = normalCode(input.awb) || fail('VALIDATION', 'Enter the AWB.');
+  if (classify(awb).kind === 'ORDER_ID')
+    fail(
+      'VALIDATION',
+      'That looks like an order ID. Enter the tracking (AWB) number, and put the order ID in the second field.',
+    );
   const orderId = input.orderId ? normalCode(input.orderId) || null : null;
   // ponytail: count-then-insert can overshoot by a request or two under a race; harmless for a soft cap.
   if ((await ctx.db.parcelRequest.count({ where: { userId: user.id, status: 'OPEN' } })) >= MAX_OPEN)
