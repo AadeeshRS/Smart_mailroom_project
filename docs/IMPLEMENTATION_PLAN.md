@@ -39,7 +39,7 @@ These IDs are referenced throughout the plan.
 | W2 | **Operator intake.** Scan the barcode, which gives an AWB or an order ID (whichever is printed). A lookup then shows: the detected carrier, any member request for that AWB (**including the delivery OTP to read out to the delivery partner**), and a warning if the AWB was already logged. The operator enters the label's name, phone, email, hostel and room, plus the shelf, then saves. The parcel is matched automatically and the member is notified. |
 | W3 | **Member registration and profile.** College email (login, can't be changed), name (can't be changed), member type (student or staff), enrollment/staff ID, personal email, phone, alternate phone, hostel (picked from a list) and room (typed). Everything except college email and name can be edited later. |
 | W4 | **Contact match.** If a member's phone, alternate phone, college email or personal email matches the contact on a logged parcel, the parcel appears on their home screen with a **Collect now** button. |
-| W5 | **Collection.** Collect now creates a one-time code (OTP) shown to the member and **pops up on the operator's Giveaway screen**. The operator enters the OTP, the app verifies it, and the operator hands the parcel over. It then moves to the member's **past parcels**. |
+| W5 | **Collection.** Collect now creates one one-time code (OTP) covering **all of the member's parcels waiting in the mailroom and linked to them**. It's shown to the member and **pops up on the operator's Giveaway screen** with the member and their parcels listed once. The operator enters the OTP, the app verifies it, then the operator ticks the parcels handed over. Those move to the member's **past parcels**; unticked ones stay in the mailroom. |
 | W6 | **Requests.** A member enters an AWB, plus an order ID if they have one. When that parcel is scanned it's linked to them **without needing a contact match**, and they're notified. Creating a request for a parcel that's already in the mailroom links it straight away, which is how a member can check whether their parcel has arrived. |
 | W7 | **Arrival notification.** A push notification (plus an in-app inbox entry) whenever a parcel is linked to a registered member. |
 | W8 | **Delivery OTP.** A member adds the OTP the courier sent them to a request. When the operator scans that AWB, they see the OTP, give it to the delivery partner and log the parcel. The stored OTP is then cleared. |
@@ -193,7 +193,7 @@ enum MemberType  { STUDENT STAFF }
 enum ParcelStatus { IN_MAILROOM COLLECTED RETURNED }
 enum MatchSource { REQUEST CONTACT MANUAL }
 enum RequestStatus { OPEN MATCHED CANCELLED EXPIRED }
-enum CollectionStatus { PENDING COMPLETED CANCELLED EXPIRED }
+enum CollectionStatus { PENDING VERIFIED COMPLETED CANCELLED EXPIRED }
 
 model User {
   id            String  @id
@@ -251,13 +251,13 @@ model ParcelRequest {
   @@index([userId, status]) @@index([orderId])
   // partial unique: one OPEN request per awb
 }
-model Collection {
-  id String @id; parcelId String; userId String
-  otpDigest String; attempts Int @default(0); status CollectionStatus @default(PENDING)
+model Collection {                       // one per Collect now tap; covers all the member's waiting parcels
+  id String @id; userId String
+  otpDigest String; attempts Int @default(0); status CollectionStatus @default(PENDING)  // PENDING → VERIFIED → COMPLETED
   requestedAt DateTime @default(now()); expiresAt DateTime
   completedAt DateTime?; operatorId String?
   @@index([status, requestedAt])
-  // partial unique: one PENDING per parcel; unique completed per parcel
+  // partial unique: one PENDING or VERIFIED per member
 }
 model Notification { id String @id; userId String; parcelId String?; type String; title String; body String; createdAt DateTime @default(now()); readAt DateTime?; pushState String @default("PENDING"); pushAttempts Int @default(0); @@index([userId, createdAt]) @@index([pushState]) }
 model AuditEvent  { id String @id; actorId String; parcelId String?; action String; detail String; at DateTime @default(now()); @@index([parcelId, at]) }   // append-only trigger
@@ -269,9 +269,9 @@ model RateWindow  { key String @id; count Int; expiresAt DateTime; @@index([expi
 There is **no global advisory lock**; this fixes F7 and F8 in the review. The cases that need care are handled like this:
 
 - **Intake retry:** the parcel `id` is a UUID generated on the phone (`expo-crypto` `randomUUID()`). A retry inserts the same ID, the unique key violation is caught, and the existing parcel is returned.
-- **Completing a handover:** `UPDATE "Collection" SET status='COMPLETED' … WHERE id=$1 AND status='PENDING' AND "expiresAt" > now()` and `UPDATE "Parcel" SET status='COLLECTED' … WHERE id=$2 AND status='IN_MAILROOM'`, in one transaction. If no row is updated, the parcel was already collected or the code expired. A double tap can't hand a parcel over twice.
+- **Completing a handover:** verifying the OTP moves the collection `PENDING → VERIFIED` with a conditional update. Completing runs, in one transaction, `UPDATE "Collection" SET status='COMPLETED' … WHERE id=$1 AND status='VERIFIED' AND "expiresAt" > now()` and `UPDATE "Parcel" SET status='COLLECTED' … WHERE id IN (ticked) AND "recipientId"=member AND status='IN_MAILROOM'`. If the collection isn't updated, or fewer parcels are updated than were ticked, the whole transaction rolls back. A double tap can't hand a parcel over twice.
 - **Linking a parcel:** `UPDATE "Parcel" SET "recipientId"=… WHERE id=… AND "recipientId" IS NULL`. Two links racing can't both win.
-- **One open request per AWB, one pending collection per parcel:** enforced by partial unique indexes in the database.
+- **One open request per AWB, one open collection per member:** enforced by partial unique indexes in the database.
 
 ### 4.7 Matching (targeted, using indexes, no table scans)
 
@@ -315,13 +315,13 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 | `GET /me/notifications` · `POST /me/notifications/{id}/read` | AUTH | Inbox |
 | `GET /me/parcels?view=ready\|history` | MEMBER | Home (ready to collect) and past parcels |
 | `GET /me/requests` · `POST /me/requests` · `PATCH /me/requests/{id}` · `DELETE /me/requests/{id}` | MEMBER | Requests. `POST` returns the matched parcel if it's already in the mailroom |
-| `POST /parcels/{id}/collection` · `DELETE /parcels/{id}/collection` | MEMBER | Collect now → `{ otp, expiresAt }` (replaces any pending code) · cancel |
+| `POST /me/collection` · `DELETE /me/collection` | MEMBER | Collect now → `{ otp, expiresAt, parcels }` for all the member's waiting parcels (replaces any open code) · cancel |
 | `GET /parcels/lookup?code=` | OPERATOR | Detected carrier and kind, the matching OPEN request (member name, room, **delivery OTP**), existing parcels with this code |
 | `POST /parcels` | OPERATOR | Intake (UUID `id`), runs matching, returns the parcel and the match result |
 | `GET /parcels?q=&status=&unmatched=&cursor=` · `GET /parcels/{id}` | OPERATOR | Search (keyset pagination) · detail with audit history |
 | `POST /parcels/{id}/assign` · `GET /members?q=` | OPERATOR | Manually link a parcel · search members by name, ID, phone or room |
-| `GET /collections?status=PENDING` | OPERATOR | Giveaway queue: member name, ID, hostel/room, label name, shelf |
-| `POST /collections/{id}/complete` | OPERATOR | `{ otp }` → verify and hand over (5 wrong attempts cancel the code) |
+| `GET /collections` | OPERATOR | Giveaway queue: each open code once, with the member (name, ID, hostel/room) and their waiting parcels (label name, whether it matches, shelf) |
+| `POST /collections/{id}/verify` · `POST /collections/{id}/complete` | OPERATOR | `{ otp }` → verify (5 wrong attempts cancel the code) · `{ parcelIds, idChecked }` → hand over the ticked parcels |
 | `GET /admin/stats?date=` | ADMIN | Received and collected that day, pending total, pending by age (0-2, 3-7, >7 days), unmatched, open requests |
 | `GET /admin/parcels/aging?olderThanDays=` | ADMIN | Parcels waiting too long, with recipient contact details |
 | `POST /admin/parcels/{id}/remind` · `POST /admin/parcels/{id}/return` | ADMIN | Send a reminder push · mark returned to sender |
@@ -334,7 +334,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 - `notifications.queue(userId, type, title, body, parcelId)` inserts a `Notification` row in the **same transaction** as the change that caused it.
 - `jobs/worker.ts` sends pending pushes through the Expo push API with plain `fetch`, no SDK needed. It retries with backoff up to 5 times, and deletes devices the push service reports as invalid.
 - **Emails** (verification and reset codes, operator invites) are sent synchronously through Resend's HTTP API with `fetch`. In development and test a console provider is used, and in production a missing API key stops the server from starting.
-- **Operator pop-up:** the operator layout checks `GET /collections?status=PENDING` every 5 s while the app is in the foreground, and shows a modal when a new code appears. `ponytail:` polling; switch to server-sent events if there are more than about 20 operators.
+- **Operator pop-up:** the operator layout checks `GET /collections` every 5 s while the app is in the foreground, and shows a modal when a new code appears. `ponytail:` polling; switch to server-sent events if there are more than about 20 operators.
 
 ### 4.11 Shared database and hosting
 
@@ -351,7 +351,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 |---|---|
 | Someone creates a request with another person's AWB to take their parcel | One open request per AWB. A CONFLICT flag if the label contact matches a different member. **At handover the operator sees the label name next to the member's name and ID** and checks their ID card. Every link is audited with its source |
 | A member enters someone else's phone number | The primary phone is unique across users. Contact matches need a verified email. The same name check at handover applies. Contact matching is treated as convenience, not proof |
-| Collection OTP guessing | Stored as HMAC with the pepper, 10-minute expiry, 5 attempts, then the code is cancelled. Collect now is limited to 6 per minute per member per parcel. A new code replaces the pending one |
+| Collection OTP guessing | Stored as HMAC with the pepper, 15-minute expiry (`COLLECTION_CODE_MINUTES`), 5 attempts, then the code is cancelled. Collect now is limited to 6 per minute per member. A new code replaces the open one |
 | Delivery OTP exposure | Returned only by `GET /parcels/lookup` to operators. Never shown in lists or logged. Cleared on match, cancellation or expiry (requests expire after 30 days) |
 | Account takeover | scrypt passwords (minimum 8 characters). Login limited to 10 per 15 minutes per email and per IP. Code verification capped at 5 attempts. Reset revokes all sessions. Same response whether or not an email is registered |
 | Privilege escalation | Roles change only through `PATCH /admin/users` (ADMIN). An admin can't demote themselves or deactivate the last admin. One permission check, plus the matrix test |
@@ -416,10 +416,10 @@ Sizes: **S** < 1 day · **M** 1-3 days · **L** 3+ days.
 
 | Task | Acceptance |
 |---|---|
-| 5.1 `collection` module: Collect now (create or replace the pending code, return the OTP), cancel, the operator queue, and complete (verify the OTP; atomic conditional updates as in 4.6; 5 attempts; audit) | Tests: happy path; wrong OTP ×5 cancels the code; an expired code fails; a double complete gives `ALREADY_COLLECTED`; replacing a code invalidates the old one |
+| 5.1 `collection` module: Collect now (one code for all the member's waiting parcels; create or replace the open code, return the OTP), cancel, the operator queue (each member once, with their parcels), verify (5 attempts, then cancelled) and complete (the ticked parcels; atomic conditional updates as in 4.6; audit). Unticked parcels stay `IN_MAILROOM` | Tests: happy path with one of two parcels ticked; wrong OTP ×5 cancels the code; an expired code fails; a double complete gives `ALREADY_COLLECTED`; replacing a code invalidates the old one; a parcel that isn't the member's rolls the handover back |
 | 5.2 Notifications for collection-requested (to operators: optional push) and collected (to the member) | |
 | 5.3 Mobile member Collect now sheet (large OTP, countdown, regenerate) and `history.tsx` | |
-| 5.4 Mobile `(operator)/giveaway.tsx` plus the polling pop-up in the operator layout. The verification panel shows the member's name, ID, hostel and room **next to the label name**, then hand over | End-to-end browser test: register → intake → Collect now → operator completes → the parcel shows in history |
+| 5.4 Mobile `(operator)/giveaway.tsx` plus the polling pop-up in the operator layout. The panel shows the member's name, ID, hostel and room once, with each parcel's **label name** and shelf; after the OTP is verified the operator ticks the parcels handed over | End-to-end browser test: intake → Collect now → operator verifies and completes → the parcel shows in history |
 | 5.5 **Name check (user rule).** Phone and personal email aren't verified but drive auto-linking, so the giveaway check is the real safeguard. If the label name is empty or shares no word with the member's name (case-insensitive), the panel shows a warning and the operator must tap **Checked ID card** before completing. The API enforces it: `complete` takes `idChecked`, refuses a mismatch without it, and records it in the audit entry | Test: a mismatch without `idChecked` is refused; with it, the handover completes and the audit entry says the ID card was checked |
 
 ### Phase 6: Push notifications (M) for W7
@@ -482,5 +482,5 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 | The hostel list | Phase 2 (or added later in the admin screen) |
 | The first admin's email | Phase 2 (`create-admin`) |
 | An Expo account and EAS project; Firebase project for Android push (FCM) | Phase 6 |
-| Thresholds: **decided**, the defaults as environment variables: `REQUEST_EXPIRY_DAYS` 30, `REMINDER_AFTER_DAYS` 3, `WAITING_TOO_LONG_DAYS` 7. The mailroom's return policy is still to be confirmed | Phase 4-7 |
+| Thresholds: **decided**, the defaults as environment variables: `REQUEST_EXPIRY_DAYS` 30, `COLLECTION_CODE_MINUTES` 15, `REMINDER_AFTER_DAYS` 3, `WAITING_TOO_LONG_DAYS` 7. The mailroom's return policy is still to be confirmed | Phase 4-7 |
 | App name, icon and bundle ID | Phase 8 |
