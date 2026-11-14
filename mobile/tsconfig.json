@@ -1,5 +1,18 @@
 {
   "extends": "expo/tsconfig.base",
-  "compilerOptions": { "strict": true, "noEmit": true, "types": ["vitest/globals", "node"], "noUnusedLocals": true, "noUnusedParameters": true },
-  "include": ["**/*.ts", "**/*.tsx", "../contracts/generated/*.d.ts", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "types": [
+      "vitest/globals",
+      "node"
+    ],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../contracts/generated/*.d.ts"
+  ]
 }
