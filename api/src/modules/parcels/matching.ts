@@ -18,7 +18,7 @@ export function contactOwners(tx: Tx, labelPhone: string | null, labelEmail: str
   if (labelPhone) or.push({ phone: labelPhone }, { altPhone: labelPhone });
   if (labelEmail) or.push({ email: labelEmail }, { personalEmail: labelEmail });
   if (!or.length) return Promise.resolve([]);
-  return tx.user.findMany({ where: { ...matchable, OR: or }, select: { id: true }, take: 2 });
+  return tx.user.findMany({ where: { ...matchable, OR: or }, select: { id: true, name: true }, take: 2 });
 }
 
 const describe = (parcel: Pick<Parcel, 'awb' | 'orderId' | 'carrier'>) =>
@@ -51,14 +51,59 @@ export async function link(
   return true;
 }
 
-/** Plan §4.7 step 2, the contact match: one owner links, several flag AMBIGUOUS for the operator, none leaves
- * the parcel unlinked. Step 1 (member requests) is added in Phase 4. */
-export async function findRecipient(tx: Tx, parcel: Parcel, actorId: string) {
+/** The open request a parcel answers: the one for its AWB, else the only one for its order ID. Requests from
+ * members who can no longer receive parcels don't count. */
+export async function openRequest(tx: Tx, awb: string | null, orderId: string | null) {
+  const where = { status: 'OPEN', user: matchable } satisfies Prisma.ParcelRequestWhereInput;
+  const include = { user: { include: { hostel: true } } } satisfies Prisma.ParcelRequestInclude;
+  const byAwb = awb ? await tx.parcelRequest.findFirst({ where: { ...where, awb }, include }) : null;
+  if (byAwb || !orderId) return byAwb;
+  const byOrder = await tx.parcelRequest.findMany({ where: { ...where, orderId }, include, take: 2 });
+  return byOrder.length === 1 ? byOrder[0] : null;
+}
+
+/** Plan §4.7 step 1: the request is used up (MATCHED, delivery OTP cleared) and the parcel links to the
+ * requester, unless one other member owns the label's contact: then it's flagged CONFLICT for the operator.
+ * False if another intake used the request first. */
+export async function claim(
+  tx: Tx,
+  parcel: Parcel,
+  request: { id: string; userId: string; user: { name: string } },
+  actorId: string,
+) {
+  const { count } = await tx.parcelRequest.updateMany({
+    where: { id: request.id, status: 'OPEN' },
+    data: { status: 'MATCHED', parcelId: parcel.id, deliveryOtp: null },
+  });
+  if (!count) return false;
   const owners = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
-  if (owners.length === 1) return link(tx, parcel, owners[0].id, 'CONTACT', actorId);
-  if (owners.length > 1 && parcel.matchFlag !== 'AMBIGUOUS')
+  if (owners.length !== 1 || owners[0].id === request.userId) {
+    await link(tx, parcel, request.userId, 'REQUEST', actorId);
+    return true;
+  }
+  await tx.parcel.update({ where: { id: parcel.id }, data: { matchFlag: 'CONFLICT' } });
+  await tx.auditEvent.create({
+    data: {
+      id: id('aud'),
+      actorId,
+      parcelId: parcel.id,
+      action: 'FLAGGED',
+      detail: `Requested by ${request.user.name}, but the label contact is ${owners[0].name}'s`,
+    },
+  });
+  return true;
+}
+
+/** Plan §4.7: an open request wins (step 1); else the contact match (step 2), where one owner links, several
+ * flag AMBIGUOUS, none leaves the parcel unlinked. A CONFLICT is the operator's call, so it's left alone. */
+export async function findRecipient(tx: Tx, parcel: Parcel, actorId: string) {
+  if (parcel.matchFlag === 'CONFLICT') return;
+  const request = await openRequest(tx, parcel.awb, parcel.orderId);
+  if (request && (await claim(tx, parcel, request, actorId))) return;
+  const owners = await contactOwners(tx, parcel.labelPhone, parcel.labelEmail);
+  if (owners.length === 1) await link(tx, parcel, owners[0].id, 'CONTACT', actorId);
+  else if (owners.length > 1 && parcel.matchFlag !== 'AMBIGUOUS')
     await tx.parcel.update({ where: { id: parcel.id }, data: { matchFlag: 'AMBIGUOUS' } });
-  return false;
 }
 
 /** Reverse trigger after a member verifies their email or edits their contacts: re-run matching only for

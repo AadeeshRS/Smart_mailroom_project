@@ -12,6 +12,7 @@ import { authenticate } from './modules/auth/service.js';
 import { handlers as auth } from './modules/auth/handlers.js';
 import { handlers as hostels } from './modules/hostels/handlers.js';
 import { handlers as parcels } from './modules/parcels/handlers.js';
+import { handlers as requests } from './modules/requests/handlers.js';
 import { handlers as users } from './modules/users/handlers.js';
 import { mailer, type Mailer } from './modules/notifications/email.js';
 
@@ -23,7 +24,7 @@ declare module 'fastify' {
 
 export type AppOptions = { now?: () => Date; mailer?: Mailer };
 const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) => void;
-const handlers: Partial<Handlers> = { ...auth, ...users, ...hostels, ...parcels };
+const handlers: Partial<Handlers> = { ...auth, ...users, ...hostels, ...parcels, ...requests };
 
 /** Every contract operation, with its $ref parameters resolved. */
 export const operations = Object.entries(contract.paths).flatMap(([path, methods]) =>

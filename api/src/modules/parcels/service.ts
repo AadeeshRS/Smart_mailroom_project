@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Parcel, Prisma } from '@prisma/client';
 import { signedIn, type Ctx, type Input, type S } from '../../contract.js';
 import { uniqueViolation } from '../../core/db.js';
 import { fail } from '../../core/errors.js';
@@ -6,7 +6,7 @@ import { phone } from '../../core/phone.js';
 import { id } from '../../core/security.js';
 import { memberSummary } from '../users/service.js';
 import { classify, normalCode } from './carrier.js';
-import { findRecipient, link, matchable } from './matching.js';
+import { findRecipient, link, matchable, openRequest } from './matching.js';
 
 const include = {
   recipient: { include: { hostel: true } },
@@ -46,7 +46,20 @@ export async function lookup(input: Input<'lookupParcel'>, ctx: Ctx) {
     orderBy: { receivedAt: 'desc' },
     take: 5,
   });
-  return { ...result, existing: existing.map(toParcel) };
+  const request = await openRequest(ctx.db, result.code, result.code);
+  return {
+    ...result,
+    existing: existing.map(toParcel),
+    ...(request && {
+      request: {
+        id: request.id,
+        member: memberSummary(request.user),
+        orderId: request.orderId,
+        deliveryOtp: request.deliveryOtp,
+        createdAt: request.createdAt.toISOString(),
+      },
+    }),
+  };
 }
 
 const text = (value?: string) => value?.trim() || null;
@@ -145,6 +158,17 @@ export async function assign(input: Input<'assignParcel'>, ctx: Ctx) {
   return toParcel(await load(ctx, parcel.id));
 }
 
+/** A parcel as its member sees it: no label contact details. */
+export const toMyParcel = (p: Parcel): S<'MyParcel'> => ({
+  id: p.id,
+  awb: p.awb,
+  orderId: p.orderId,
+  carrier: p.carrier,
+  status: p.status,
+  receivedAt: p.receivedAt.toISOString(),
+  collectedAt: p.collectedAt?.toISOString() ?? null,
+});
+
 /** The signed-in member's parcels: waiting in the mailroom, or the latest 100 collected or returned. */
 export async function mine(input: Input<'listMyParcels'>, ctx: Ctx) {
   const { user } = signedIn(ctx);
@@ -153,15 +177,5 @@ export async function mine(input: Input<'listMyParcels'>, ctx: Ctx) {
     orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
     take: 100,
   });
-  return {
-    items: rows.map(p => ({
-      id: p.id,
-      awb: p.awb,
-      orderId: p.orderId,
-      carrier: p.carrier,
-      status: p.status,
-      receivedAt: p.receivedAt.toISOString(),
-      collectedAt: p.collectedAt?.toISOString() ?? null,
-    })),
-  };
+  return { items: rows.map(toMyParcel) };
 }

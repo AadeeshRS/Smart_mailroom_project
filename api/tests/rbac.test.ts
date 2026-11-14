@@ -35,6 +35,10 @@ const EXPECTED: Record<Operation, Permission> = {
   assignParcel: 'OPERATOR',
   searchMembers: 'OPERATOR',
   listMyParcels: 'MEMBER',
+  listMyRequests: 'MEMBER',
+  createRequest: 'MEMBER',
+  updateRequest: 'MEMBER',
+  cancelRequest: 'MEMBER',
 };
 
 /** Who may call each permission level, independent of src/core/rbac.ts. */

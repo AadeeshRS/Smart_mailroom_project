@@ -5,8 +5,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 export const database = (url: string) =>
   new PrismaClient({ adapter: new PrismaPg({ connectionString: url, max: 12 }) });
 
-/** The column a single-column unique constraint failed on, if `error` is one. With the pg adapter Prisma
- * reports the index name (`User_phone_key`); other engines report the fields. */
+/** The column a single-column unique constraint failed on, if `error` is one; for a hand-named index (the
+ * partial ones in the baseline migration) its name. With the pg adapter Prisma reports the index name
+ * (`User_phone_key`); other engines report the fields. */
 export function uniqueViolation(error: unknown): string | undefined {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return undefined;
   const meta = error.meta as
@@ -14,5 +15,6 @@ export function uniqueViolation(error: unknown): string | undefined {
     | undefined;
   const constraint = meta?.driverAdapterError?.cause?.constraint;
   if (constraint?.index?.endsWith('_pkey')) return 'id';
-  return constraint?.fields?.[0] ?? /^[A-Za-z]+_(\w+)_key$/.exec(constraint?.index ?? '')?.[1] ?? meta?.target?.[0];
+  const index = constraint?.index ?? '';
+  return constraint?.fields?.[0] ?? /^[A-Za-z]+_(\w+)_key$/.exec(index)?.[1] ?? (index || meta?.target?.[0]);
 }

@@ -12,6 +12,8 @@ export type Config = {
   /** Per-IP limits per 15 minutes. Loose by default: a campus shares one public IP. Every attempt counts,
    * successful or not. Per-email limits are fixed in the auth module. */
   rates: { loginPerIp: number; codesPerIp: number; codeChecksPerIp: number };
+  /** Open member requests expire after this many days. */
+  requestExpiryDays: number;
 };
 
 const count = (value: string | undefined, fallback: number, name: string) => {
@@ -55,6 +57,7 @@ export function config(env = process.env): Config {
       codesPerIp: count(env.RATE_CODES_PER_IP, 150, 'RATE_CODES_PER_IP'),
       codeChecksPerIp: count(env.RATE_CODE_CHECKS_PER_IP, 300, 'RATE_CODE_CHECKS_PER_IP'),
     },
+    requestExpiryDays: count(env.REQUEST_EXPIRY_DAYS, 30, 'REQUEST_EXPIRY_DAYS'),
   };
   if (environment === 'production') {
     const missing = ['RESEND_API_KEY', 'MAIL_FROM', 'ALLOWED_EMAIL_DOMAINS'].filter(name => !env[name]?.trim());
