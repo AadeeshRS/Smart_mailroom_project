@@ -26,7 +26,7 @@ export function contactOwners(
   return tx.user.findMany({ where: { ...matchable, ...also, OR: or }, select: { id: true, name: true }, take: 2 });
 }
 
-const describe = (parcel: Pick<Parcel, 'awb' | 'orderId' | 'carrier'>) =>
+export const describe = (parcel: Pick<Parcel, 'awb' | 'orderId' | 'carrier'>) =>
   `Your ${parcel.carrier ? parcel.carrier.replace('_', ' ').toLowerCase() + ' ' : ''}parcel ${parcel.awb ?? parcel.orderId}`;
 
 /** Link a parcel to a member unless someone already has it (conditional update: two links racing can't both

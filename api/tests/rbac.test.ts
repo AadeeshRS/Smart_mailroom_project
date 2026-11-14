@@ -44,6 +44,10 @@ const EXPECTED: Record<Operation, Permission> = {
   listCollections: 'OPERATOR',
   verifyCollection: 'OPERATOR',
   completeCollection: 'OPERATOR',
+  getStats: 'ADMIN',
+  listAging: 'ADMIN',
+  remindParcel: 'ADMIN',
+  returnParcel: 'ADMIN',
 };
 
 /** Who may call each permission level, independent of src/core/rbac.ts. */

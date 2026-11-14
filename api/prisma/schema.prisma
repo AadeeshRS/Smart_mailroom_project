@@ -182,6 +182,8 @@ model Parcel {
   @@index([labelEmail])
   @@index([recipientId, status])
   @@index([status, receivedAt])
+  @@index([receivedAt])
+  @@index([collectedAt])
 }
 
 model ParcelRequest {

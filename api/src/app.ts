@@ -9,6 +9,7 @@ import { DomainError } from './core/errors.js';
 import { allowed } from './core/rbac.js';
 import { id } from './core/security.js';
 import { authenticate } from './modules/auth/service.js';
+import { handlers as admin } from './modules/admin/handlers.js';
 import { handlers as auth } from './modules/auth/handlers.js';
 import { handlers as collection } from './modules/collection/handlers.js';
 import { handlers as hostels } from './modules/hostels/handlers.js';
@@ -25,7 +26,15 @@ declare module 'fastify' {
 
 export type AppOptions = { now?: () => Date; mailer?: Mailer };
 const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) => void;
-const handlers: Partial<Handlers> = { ...auth, ...users, ...hostels, ...parcels, ...requests, ...collection };
+const handlers: Partial<Handlers> = {
+  ...auth,
+  ...users,
+  ...hostels,
+  ...parcels,
+  ...requests,
+  ...collection,
+  ...admin,
+};
 
 /** Every contract operation, with its $ref parameters resolved. */
 export const operations = Object.entries(contract.paths).flatMap(([path, methods]) =>

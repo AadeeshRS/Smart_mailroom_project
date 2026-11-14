@@ -13,6 +13,7 @@ const include = {
   receivedBy: { select: { name: true } },
 } satisfies Prisma.ParcelInclude;
 type Full = Prisma.ParcelGetPayload<{ include: typeof include }>;
+export { include as parcelInclude };
 
 export const toParcel = (p: Full): S<'OperatorParcel'> => ({
   id: p.id,
