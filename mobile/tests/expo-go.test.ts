@@ -5,8 +5,8 @@ import { expect, test } from 'vitest';
 const load = createRequire(import.meta.url);
 const bundled = load('expo/bundledNativeModules.json') as Record<string, string>;
 const { dependencies } = load('../package.json') as { dependencies: Record<string, string> };
-/** The SDK itself, and packages with no native code of their own. */
-const JS_ONLY = ['expo', 'react-native-qrcode-svg'];
+/** Packages with no native code of their own: only the SDK itself. */
+const JS_ONLY = ['expo'];
 
 test('every dependency ships in Expo Go or is JS-only', () => {
   expect(Object.keys(dependencies).filter(name => !(name in bundled) && !JS_ONLY.includes(name))).toEqual([]);
