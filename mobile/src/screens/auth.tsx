@@ -1,5 +1,5 @@
 import { Redirect, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { DEMO_PASSCODE } from '../api/service';
 import { useAction, useRuntime } from '../runtime';

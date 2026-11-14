@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, Modal, Platform, View } from 'react-native';
 import { Button, Card, Heading, Muted, Notice, Page } from './ui';
 

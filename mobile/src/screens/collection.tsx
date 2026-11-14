@@ -1,5 +1,5 @@
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Scanner } from '../Scanner';

@@ -1,5 +1,5 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import type { Schema } from '../api/service';
 import { retryKey, useAction, useResource, useRuntime } from '../runtime';

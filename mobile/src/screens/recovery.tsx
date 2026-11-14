@@ -1,5 +1,4 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
 import { confirmWithRecovery } from '../confirmationRecovery';
 import { useAction, useResource, useRuntime } from '../runtime';
 import { Body, Button, Card, Empty, Feedback, Heading, Muted, Notice, Page, ResourceState } from '../ui';

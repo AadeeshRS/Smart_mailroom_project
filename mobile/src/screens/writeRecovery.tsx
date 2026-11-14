@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import type { PendingWrite, RecoveryProtection } from '../api/writeRecovery';
 import { ServiceError } from '../api/service';
