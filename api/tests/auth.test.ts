@@ -153,7 +153,7 @@ test('a deactivated account can no longer sign in', async () => {
   await fails('login', { email: user.email, password: PASSWORD }, 'ACCOUNT_DISABLED');
 });
 
-test('six simultaneous logins all succeed while scrypt runs two at a time', async () => {
+test('six simultaneous logins all succeed', async () => {
   const users = await Promise.all(Array.from({ length: 6 }, () => signIn('MEMBER')));
   const sessions = await Promise.all(users.map(({ user }) => call('login', { email: user.email, password: PASSWORD })));
   assert.deepEqual(

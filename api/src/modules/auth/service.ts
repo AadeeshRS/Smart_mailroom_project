@@ -17,7 +17,7 @@ const WINDOW = 15 * MINUTE;
 const LOGINS_PER_EMAIL = 10;
 const CODES_PER_EMAIL = 5;
 // Same cost as a real hash, so an unknown email takes as long as a wrong password.
-const DUMMY_HASH = 'scrypt$131072$8$1$00000000000000000000000000000000$' + '0'.repeat(128);
+const DUMMY_HASH = 'scrypt$16384$8$5$00000000000000000000000000000000$' + '0'.repeat(128);
 
 export const normalEmail = (email: string) => email.trim().toLowerCase();
 
