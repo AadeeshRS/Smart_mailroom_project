@@ -31,6 +31,7 @@ async function signIn(page: Page, email: string, password = PASSWORD) {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
 async function signOut(page: Page) {
+  await page.getByRole('tab', { name: /Profile/ }).click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
 }
@@ -63,11 +64,12 @@ test('a member registers, verifies their email, stays signed in across a reload 
   await field(page, 'Code').fill(await emailedCode(email));
   await page.getByRole('button', { name: 'Verify', exact: true }).click();
 
-  await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/\/member\/profile$/);
-  await expect(page.getByText(email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hello, Asha', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/member$/);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hello, Asha', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: /Profile/ }).click();
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
   await expect(field(page, 'Room (optional)')).toHaveValue('B-214');
   await expect(page.getByRole('radio', { name: hostel, exact: true })).toBeChecked();
 
@@ -84,16 +86,51 @@ test('a member registers, verifies their email, stays signed in across a reload 
 
 test('each role lands in its own section and is sent back from the others', async ({ page }) => {
   for (const [role, own, other] of [
-    ['operator', '/operator/profile', '/admin/profile'],
-    ['admin', '/admin/profile', '/member/profile'],
-    ['member', '/member/profile', '/operator/profile'],
+    ['operator', '/operator/scan', '/admin/parcels'],
+    ['admin', '/admin/scan', '/member'],
+    ['member', '/member', '/operator/parcels'],
   ] as const) {
     await page.goto('/login');
     await signIn(page, `${role}@college.example`);
     await expect(page).toHaveURL(new RegExp(own + '$'));
     await page.goto(other);
     await expect(page).toHaveURL(new RegExp(own + '$'));
-    await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
     await signOut(page);
   }
+});
+
+test('an operator logs a parcel from its label and the member with that phone sees it at home', async ({ page }) => {
+  const phone = `8${String(Date.now()).slice(-9)}`;
+  const member = await apiCall('/auth/login', { email: 'member@college.example', password: PASSWORD });
+  await fetch(API + '/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${member.token}` },
+    body: JSON.stringify({ phone }),
+  });
+  const awb = `EE${String(Date.now()).slice(-9)}IN`;
+
+  await page.goto('/login');
+  await signIn(page, 'operator@college.example');
+  await field(page, 'AWB or order ID').fill(awb.toLowerCase());
+  await page.getByRole('button', { name: 'Look up', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Label details', exact: true })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'India Post', exact: true })).toBeChecked();
+  await field(page, 'Name').fill('Test Member');
+  await field(page, 'Phone').fill(phone);
+  await field(page, 'Shelf').fill('E2E');
+  await page.getByRole('button', { name: 'Save parcel', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Parcel saved', exact: true })).toBeVisible();
+  await expect(page.getByText(/^Test Member .*\(label contact\)$/)).toBeVisible();
+
+  // Scanning the same code again warns that it's already logged.
+  await page.getByRole('button', { name: 'Scan the next parcel', exact: true }).click();
+  await field(page, 'AWB or order ID').fill(awb);
+  await page.getByRole('button', { name: 'Look up', exact: true }).click();
+  await expect(page.getByText(/Already logged once/)).toBeVisible();
+  await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+  await signOut(page);
+
+  await signIn(page, 'member@college.example');
+  await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
+  await expect(page.getByText(/^India Post · arrived/)).toBeVisible();
 });

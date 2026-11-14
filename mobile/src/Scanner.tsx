@@ -6,12 +6,10 @@ import { Button, Card, Heading, Muted, Notice, Page } from './ui';
 /** Only decoded barcode text is returned. No OCR, identity inference, or auto-submission. */
 export function Scanner({
   open,
-  purpose,
   onClose,
   onScan,
 }: {
   open: boolean;
-  purpose: 'LABEL' | 'CREDENTIAL';
   onClose: () => void;
   onScan: (text: string) => void;
 }) {
@@ -58,16 +56,14 @@ export function Scanner({
     <Modal visible={open} animationType="slide" onRequestClose={onClose}>
       <Page
         modal
-        title={purpose === 'LABEL' ? 'Scan a parcel label' : 'Scan collection QR'}
+        title="Scan a parcel label"
         subtitle="Camera scanning requires a supported device and camera permission."
         back={onClose}
       >
         <Notice>
-          {purpose === 'LABEL'
-            ? 'A barcode contains text only. Review its type, namespace and value, then enter missing label evidence.'
-            : 'Scan the student’s current parcel-specific QR. Verification still requires review and separate handover confirmation.'}
+          Point the camera at the AWB or order-ID barcode. You type the name and phone from the label next.
         </Notice>
-        {error ? <Notice danger>{error}</Notice> : null}
+        {!!error && <Notice danger>{error}</Notice>}
         {available === false ? (
           <Card>
             <Heading>Camera unavailable</Heading>
@@ -100,10 +96,7 @@ export function Scanner({
               style={{ flex: 1 }}
               facing="back"
               barcodeScannerSettings={{
-                barcodeTypes:
-                  purpose === 'CREDENTIAL'
-                    ? ['qr']
-                    : ['qr', 'code128', 'code39', 'ean13', 'ean8', 'pdf417', 'datamatrix', 'upc_a', 'upc_e'],
+                barcodeTypes: ['qr', 'code128', 'code39', 'ean13', 'ean8', 'pdf417', 'datamatrix', 'upc_a', 'upc_e'],
               }}
               onMountError={() =>
                 setError('Camera preview failed. Return to manual entry or try another supported device.')
@@ -124,11 +117,7 @@ export function Scanner({
         ) : (
           <Muted>Checking camera availability…</Muted>
         )}
-        <Button
-          label={purpose === 'LABEL' ? 'Use manual label entry' : 'Use manual OTP entry'}
-          variant="quiet"
-          onPress={onClose}
-        />
+        <Button label="Type the code instead" variant="quiet" onPress={onClose} />
       </Page>
     </Modal>
   );

@@ -156,12 +156,12 @@ export function Button({
     </Animated.View>
   );
 }
-export function SuccessMark() {
+export function SuccessMark({ label = 'Saved' }: { label?: string }) {
   const entrance = useEntrance();
   return (
     <Animated.View
       accessibilityRole="image"
-      accessibilityLabel="Handover saved"
+      accessibilityLabel={label}
       style={{
         width: 52,
         height: 52,

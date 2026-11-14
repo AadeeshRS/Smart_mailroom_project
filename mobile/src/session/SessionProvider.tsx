@@ -25,7 +25,7 @@ const tokenStore =
 
 /** Where each role lands after signing in. */
 export const home = (role: User['role']) =>
-  role === 'MEMBER' ? '/member/profile' : role === 'OPERATOR' ? '/operator/profile' : '/admin/profile';
+  role === 'MEMBER' ? '/member' : role === 'OPERATOR' ? '/operator/scan' : '/admin/scan';
 
 type Session = {
   api: MailroomService;

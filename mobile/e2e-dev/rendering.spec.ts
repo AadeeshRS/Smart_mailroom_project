@@ -36,9 +36,22 @@ test('development screens do not render empty text directly inside native Views'
   await expect(field(page, 'New password')).toBeVisible();
   await page.goto('/verify-email?email=nobody%40college.example');
   await expect(heading(page, 'Check your email')).toBeVisible();
-  for (const role of ['member', 'operator', 'admin']) {
+  for (const [role, landing] of [
+    ['member', 'Hello, Test'],
+    ['operator', 'Receive a parcel'],
+    ['admin', 'Receive a parcel'],
+  ] as const) {
     await page.goto('/login');
     await signIn(page, `${role}@college.example`);
+    await expect(heading(page, landing)).toBeVisible();
+    if (role === 'operator') {
+      await field(page, 'AWB or order ID').fill('D12345678');
+      await page.getByRole('button', { name: 'Look up', exact: true }).click();
+      await expect(heading(page, 'Label details')).toBeVisible();
+      await page.getByRole('tab', { name: /Parcels/ }).click();
+      await expect(heading(page, 'Parcels')).toBeVisible();
+    }
+    await page.getByRole('tab', { name: /Profile/ }).click();
     await expect(heading(page, 'Profile')).toBeVisible();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(heading(page, 'Sign in')).toBeVisible();
