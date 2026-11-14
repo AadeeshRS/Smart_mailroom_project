@@ -3,6 +3,7 @@ import { signedIn, type Ctx, type Input } from '../../contract.js';
 import { fail } from '../../core/errors.js';
 import { limit } from '../../core/rate.js';
 import { digest, equal, id, otp, passwordHash, passwordValid, secretDigest, token } from '../../core/security.js';
+import { rematchFor } from '../parcels/matching.js';
 import { profileData, saveProfile, toUser } from '../users/service.js';
 
 const MINUTE = 60_000;
@@ -149,6 +150,7 @@ export async function verifyEmail(input: Input<'verifyEmail'>, ctx: Ctx) {
     where: { id: user.id },
     data: { emailVerifiedAt: user.emailVerifiedAt ?? ctx.now },
   });
+  await rematchFor(ctx.db, verified); // parcels may have arrived before the member verified
   return startSession(ctx, verified);
 }
 

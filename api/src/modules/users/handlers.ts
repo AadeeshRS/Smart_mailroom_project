@@ -7,4 +7,5 @@ export const handlers = {
   listUsers: users.listUsers,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  searchMembers: users.searchMembers,
 } satisfies Partial<Handlers>;

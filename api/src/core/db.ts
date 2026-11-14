@@ -13,5 +13,6 @@ export function uniqueViolation(error: unknown): string | undefined {
     | { target?: string[]; driverAdapterError?: { cause?: { constraint?: { fields?: string[]; index?: string } } } }
     | undefined;
   const constraint = meta?.driverAdapterError?.cause?.constraint;
+  if (constraint?.index?.endsWith('_pkey')) return 'id';
   return constraint?.fields?.[0] ?? /^[A-Za-z]+_(\w+)_key$/.exec(constraint?.index ?? '')?.[1] ?? meta?.target?.[0];
 }

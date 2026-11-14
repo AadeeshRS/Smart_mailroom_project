@@ -5,6 +5,7 @@ import { fail } from '../../core/errors.js';
 import { phone } from '../../core/phone.js';
 import { id } from '../../core/security.js';
 import { normalEmail, sendCode } from '../auth/service.js';
+import { matchable, rematchFor } from '../parcels/matching.js';
 
 export async function toUser(ctx: Ctx, user: User & { hostel?: Hostel | null }): Promise<S<'User'>> {
   const hostel =
@@ -31,6 +32,17 @@ export async function toUser(ctx: Ctx, user: User & { hostel?: Hostel | null }):
     createdAt: user.createdAt.toISOString(),
   };
 }
+
+/** What operators see of a member: enough to find them and check their ID at the counter. */
+export const memberSummary = (user: User & { hostel: Hostel | null }): S<'MemberSummary'> => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  idNumber: user.idNumber,
+  phone: user.phone,
+  hostelName: user.hostel?.name ?? null,
+  roomNumber: user.roomNumber,
+});
 
 const validPhone = (raw: string) => phone(raw) ?? fail('VALIDATION', `"${raw}" isn't a valid phone number.`);
 
@@ -76,6 +88,8 @@ export async function updateMe(input: Input<'updateMe'>, ctx: Ctx) {
   const updated = await saveProfile(() =>
     ctx.db.user.update({ where: { id: user.id }, data, include: { hostel: true } }),
   );
+  // Reverse trigger: new contact details may match parcels already waiting.
+  if ('phone' in data || 'altPhone' in data || 'personalEmail' in data) await rematchFor(ctx.db, updated);
   return toUser(ctx, updated);
 }
 
@@ -105,6 +119,28 @@ export async function listUsers(input: Input<'listUsers'>, ctx: Ctx) {
   });
   const items = await Promise.all(rows.slice(0, take).map(row => toUser(ctx, row)));
   return rows.length > take ? { items, nextCursor: items.at(-1)!.id } : { items };
+}
+
+/** Operators finding a member to assign a parcel to: verified members only, at most 20. */
+export async function searchMembers(input: Input<'searchMembers'>, ctx: Ctx) {
+  const term = input.q.trim();
+  const digits = term.replace(/\D/g, '');
+  const rows = await ctx.db.user.findMany({
+    where: {
+      ...matchable,
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        { idNumber: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { roomNumber: { equals: term, mode: 'insensitive' } },
+        ...(digits.length >= 4 ? [{ phone: { contains: digits } }, { altPhone: { contains: digits } }] : []),
+      ],
+    },
+    include: { hostel: true },
+    orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    take: 20,
+  });
+  return { items: rows.map(memberSummary) };
 }
 
 /** Operators and admins are invited: no password until they use the emailed code. */
