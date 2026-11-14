@@ -88,7 +88,7 @@ test('a member registers, verifies their email, stays signed in across a reload 
 test('each role lands in its own section and is sent back from the others', async ({ page }) => {
   for (const [role, own, other] of [
     ['operator', '/operator/scan', '/admin/parcels'],
-    ['admin', '/admin/scan', '/member'],
+    ['admin', '/admin/dashboard', '/member'],
     ['member', '/member', '/operator/parcels'],
   ] as const) {
     await page.goto('/login');
@@ -214,4 +214,31 @@ test('a member taps Collect now; the operator verifies the code, checks the ID c
   await signIn(page, 'member@college.example');
   await page.getByRole('tab', { name: /Past/ }).click();
   await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
+});
+
+test('an admin lands on the dashboard, adds an operator and a hostel', async ({ page }) => {
+  const stamp = Date.now();
+  await page.goto('/login');
+  await signIn(page, 'admin@college.example');
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.getByLabel(/^Received today: \d+$/)).toBeVisible();
+  await expect(page.getByText(/^Waiting by age: /)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Users', exact: true }).click();
+  await field(page, 'Email').fill(`op${stamp}@college.example`);
+  await field(page, 'Name').fill('New Operator');
+  await page.getByRole('button', { name: 'Add and email a code', exact: true }).click();
+  await expect(page.getByText(`Added op${stamp}@college.example.`, { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New Operator', exact: true })).toBeVisible();
+  await expect
+    .poll(async () => (await fetch(`http://127.0.0.1:3101/code?email=op${stamp}@college.example`)).status)
+    .toBe(200);
+
+  await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Hostels', exact: true }).click();
+  await field(page, 'New hostel').fill(`Hostel ${stamp}`);
+  await page.getByRole('button', { name: 'Add hostel', exact: true }).click();
+  await expect(page.getByRole('heading', { name: `Hostel ${stamp}`, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 });

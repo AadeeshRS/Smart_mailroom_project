@@ -7,6 +7,7 @@ export default function Layout() {
       <RoleTabs
         role="ADMIN"
         tabs={[
+          { name: 'dashboard', title: 'Dashboard', icon: 'stats-chart-outline' },
           { name: 'scan', title: 'Scan', icon: 'scan-outline' },
           { name: 'giveaway', title: 'Giveaway', icon: 'hand-left-outline' },
           { name: 'parcels', title: 'Parcels', icon: 'cube-outline' },
