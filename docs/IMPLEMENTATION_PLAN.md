@@ -16,6 +16,14 @@
 5. Every non-public operation declares an `x-permission` in the contract. The route × role matrix test (task 2.6) must fail if one doesn't.
 6. Tests run only against a **local** `smart_mailroom_test` database. Never run tests against the shared online database.
 7. Stop and ask the user if something in section 9 ("Needed from the user") is missing when a task needs it.
+8. **Expo Go only, permanently.** The app is previewed only in Expo Go (SDK 58) and is never rebuilt during
+   development. Every commit must open and run in Expo Go with no red screens and no warnings. Add native packages
+   only with `npx expo install`, and only ones Expo Go includes. `mobile/tests/expo-go.test.ts` (run in CI) fails if
+   a dependency is in neither `expo/bundledNativeModules.json` nor its short allowlist of JS-only packages. What
+   Expo Go can't do (push on Android) is skipped there quietly and waits for the release builds in Phase 8.
+9. **Before every push,** run every check in one chain that stops at the first failure (`&&` in PowerShell 7 or
+   bash, or test `$LASTEXITCODE`): contracts, API tests and format, mobile typecheck, lint, tests and format, and
+   both browser suites whenever API or mobile behaviour changed. Never push with a failing check.
 
 ## 1. Decisions (locked with the user)
 
@@ -340,10 +348,10 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 
 - **Database:** online Postgres 17 from Neon or Supabase. **Name the database `smart_mailroom_dev`**; the existing seed guard (`api/src/config.ts` `dedicatedDataset`) then works with no code change while the demo login still exists in Phase 1.
 - **Connection strings:** set `DATABASE_URL` to the pooled URL with `sslmode=require` for the running API. Add `DIRECT_DATABASE_URL`, the non-pooled URL, which Prisma migrations use (`api/prisma.config.ts`).
-- **API:** a Render or Railway web service built from `api/`. Build: `npm ci && npm run generate && npm run build`. Pre-deploy: `npm run migrate`. Start: `npm start`. Health check: `/readyz`. Environment: `DATABASE_URL`, `DIRECT_DATABASE_URL`, `CREDENTIAL_PEPPER`, `NODE_ENV`, `HOST=0.0.0.0`, `PORT`, `TRUST_PROXY=1`, `CORS_ORIGINS`, `CONTRACT_PATH` (or ship `contracts/` in the build), and from Phase 2 `RESEND_API_KEY`, `MAIL_FROM` and `ALLOWED_EMAIL_DOMAINS`.
+- **API:** a Render web service on the Free plan, built from `api/`. Build: `npm ci --include=dev && npm run generate && npm run build`. Start: `npm run migrate && npm start` (the Free plan has no pre-deploy step; `migrate deploy` does nothing when the schema is current). Health check: `/readyz`. Environment: `DATABASE_URL`, `DIRECT_DATABASE_URL`, `CREDENTIAL_PEPPER`, `NODE_ENV`, `HOST=0.0.0.0`, `PORT`, `TRUST_PROXY=1`, `CORS_ORIGINS`, `CONTRACT_PATH` (or ship `contracts/` in the build), and from Phase 2 `RESEND_API_KEY`, `MAIL_FROM` and `ALLOWED_EMAIL_DOMAINS`.
 - **Mobile:** `EXPO_PUBLIC_API_BASE_URL=https://<service>/v1`. That works on any network with no LAN setup.
 - **Migrations run only from the deployment**, never from a developer's machine against the shared database. Developers use a local database for development and always for tests.
-- Render's free tier sleeps when idle, so the first request after a while takes about 50 s. Use a paid instance for the demo or for real use.
+- Render's Free plan sleeps after 15 minutes idle (the first request then takes about a minute), and the background worker runs only while it's awake. It has no Shell, so the first admin is created from a laptop with `npm run create-admin:neon` (`docs/DEPLOYMENT.md`).
 
 ## 5. Security controls specific to this workflow
 
@@ -427,8 +435,8 @@ Sizes: **S** < 1 day · **M** 1-3 days · **L** 3+ days.
 | Task | Acceptance |
 |---|---|
 | 6.1 `notifications` module: queue, inbox, mark read; device registration | Tests |
-| 6.2 Worker push sender (Expo push API through `fetch`, retries, removal of invalid tokens) | Test with a stubbed `fetch` |
-| 6.3 Mobile `src/push/register.ts`: ask for permission after login, upload the token, tapping a notification opens the parcel. Needs an EAS project ID, and FCM credentials for Android | A physical phone gets an arrival push |
+| 6.2 Worker push sender (Expo push API through `fetch`, retries, removal of invalid tokens) | Test with a mocked `fetch` |
+| 6.3 Mobile push under rule 8: after login, ask for permission and upload the Expo push token; tapping a notification opens Home. Skipped in Expo Go on Android (`isRunningInExpoGo()` and `Platform.OS`), with `expo-notifications` loaded lazily so nothing errors or warns there. iOS in Expo Go registers with the EAS project ID from `eas init`. No Firebase and no builds until Phase 8 | An iPhone in Expo Go gets an arrival push. Android members in Expo Go see the parcel on Home with no push, as expected |
 | 6.4 Reminder job: parcels in the mailroom longer than `REMINDER_AFTER_DAYS` (default 3) get one reminder each N days, tracked with `lastRemindedAt` | Test with an injected clock |
 
 ### Phase 7: Admin dashboard (M) for W9
@@ -446,7 +454,7 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 |---|---|
 | 8.1 Database roles: the app connects as a non-owner `mailroom_app`; migrations use the owner | F19 |
 | 8.2 Backups (daily snapshots on the database provider, or `pg_dump`), plus one restore drill | F14 |
-| 8.3 EAS build profiles, app name, icon, splash and bundle ID; an installable Android APK (internal distribution) | F23 |
+| 8.3 EAS build profiles, app name, icon, splash, iOS bundle ID and Android package name; Firebase/FCM credentials so Android gets pushes; an installable Android APK (internal distribution) | F23 |
 | 8.4 Friendly error messages per error code (with the requestId in a details line); an accessibility pass; a physical-device test (label scan, collection) | F26, F27, F30 |
 | 8.5 Privacy notice at registration; a retention job that pseudonymises old collected parcels | F36 |
 | 8.6 Rewrite the README as developer documentation; a decision record reconciling the Phase 0 design (FastAPI / Next.js) with this stack | F33 |
@@ -481,6 +489,7 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 | A Resend account and API key, plus a sender address (a verified domain, or Resend's test sender for development) | Phase 2 |
 | The hostel list | Phase 2 (or added later in the admin screen) |
 | The first admin's email | Phase 2 (`create-admin`) |
-| An Expo account and EAS project; Firebase project for Android push (FCM) | Phase 6 |
+| An Expo account, for the EAS project ID (`eas init`) that iOS push in Expo Go needs | Phase 6 |
+| A Firebase project and FCM credentials for Android push, and the Android package name | Phase 8 (release builds) |
 | Thresholds: **decided**, the defaults as environment variables: `REQUEST_EXPIRY_DAYS` 30, `COLLECTION_CODE_MINUTES` 15, `REMINDER_AFTER_DAYS` 3, `WAITING_TOO_LONG_DAYS` 7. The mailroom's return policy is still to be confirmed | Phase 4-7 |
 | App name, icon and bundle ID | Phase 8 |
