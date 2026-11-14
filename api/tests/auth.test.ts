@@ -72,11 +72,12 @@ test('no account enumeration: same answers for known and unknown emails', async 
   const { user } = await signIn('MEMBER', { email: 'known@college.example' });
   const unknown = await call('login', { email: 'nobody@college.example', password: PASSWORD });
   const wrong = await call('login', { email: user.email, password: 'not-the-password' });
-  assert.equal(unknown.status, 401);
-  assert.deepEqual(
-    { ...wrong, body: { ...wrong.body, error: { ...(wrong.body as { error: object }).error, requestId: '' } } },
-    { ...unknown, body: { ...unknown.body, error: { ...(unknown.body as { error: object }).error, requestId: '' } } },
-  );
+  const answer = (reply: typeof wrong) => {
+    const { error } = reply.body as unknown as { error: { code: string; message: string; retryable: boolean } };
+    return [reply.status, error.code, error.message, error.retryable];
+  };
+  assert.deepEqual(answer(wrong), [401, 'UNAUTHENTICATED', 'Wrong email or password.', false]);
+  assert.deepEqual(answer(unknown), answer(wrong));
   for (const email of [user.email, 'nobody@college.example']) {
     assert.equal((await call('forgotPassword', { email })).status, 202);
     assert.equal((await call('resendCode', { email })).status, 202);

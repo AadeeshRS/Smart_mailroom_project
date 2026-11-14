@@ -15,10 +15,10 @@ assert.equal(new URL(settings.databaseUrl).pathname, '/smart_mailroom_test', 'Te
 export const db = database(settings.databaseUrl);
 export const clock = { now: Date.now() };
 export const mail: { to: string; subject: string; text: string }[] = [];
-export const app = await createApp(db, settings, {
-  now: () => new Date(clock.now),
-  mailer: { send: async (to, subject, text) => void mail.push({ to, subject, text }) },
-});
+export const mailer = {
+  send: async (to: string, subject: string, text: string) => void mail.push({ to, subject, text }),
+};
+export const app = await createApp(db, settings, { now: () => new Date(clock.now), mailer });
 after(async () => {
   await app.close();
   await db.$disconnect();
