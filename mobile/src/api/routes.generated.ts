@@ -1,176 +1,104 @@
 // Generated from contracts/openapi.yaml. Do not edit.
 export const routes = {
-  "login": {
+  "register": {
     "method": "POST",
-    "path": "/demo/sessions",
+    "path": "/auth/register",
     "query": [],
     "body": true
   },
-  "getSession": {
-    "method": "GET",
-    "path": "/session",
+  "verifyEmail": {
+    "method": "POST",
+    "path": "/auth/verify-email",
     "query": [],
-    "body": false
+    "body": true
+  },
+  "resendCode": {
+    "method": "POST",
+    "path": "/auth/resend-code",
+    "query": [],
+    "body": true
+  },
+  "login": {
+    "method": "POST",
+    "path": "/auth/login",
+    "query": [],
+    "body": true
+  },
+  "forgotPassword": {
+    "method": "POST",
+    "path": "/auth/forgot-password",
+    "query": [],
+    "body": true
+  },
+  "resetPassword": {
+    "method": "POST",
+    "path": "/auth/reset-password",
+    "query": [],
+    "body": true
   },
   "logout": {
     "method": "DELETE",
-    "path": "/session",
+    "path": "/auth/session",
     "query": [],
     "body": false
   },
-  "getGuide": {
+  "listHostels": {
     "method": "GET",
-    "path": "/guides/{platform}",
+    "path": "/hostels",
     "query": [],
     "body": false
   },
-  "listOrders": {
+  "getMe": {
     "method": "GET",
-    "path": "/orders",
-    "query": [
-      "cursor",
-      "limit",
-      "q",
-      "status"
-    ],
+    "path": "/me",
+    "query": [],
     "body": false
   },
-  "createOrder": {
-    "method": "POST",
-    "path": "/orders",
+  "updateMe": {
+    "method": "PATCH",
+    "path": "/me",
     "query": [],
     "body": true
   },
-  "getOrder": {
-    "method": "GET",
-    "path": "/orders/{orderId}",
-    "query": [],
-    "body": false
-  },
-  "addTracking": {
+  "changePassword": {
     "method": "POST",
-    "path": "/orders/{orderId}/tracking",
+    "path": "/me/password",
     "query": [],
     "body": true
   },
-  "cancelOrder": {
-    "method": "POST",
-    "path": "/orders/{orderId}/cancellation",
-    "query": [],
-    "body": false
-  },
-  "listParcels": {
+  "listUsers": {
     "method": "GET",
-    "path": "/parcels",
-    "query": [
-      "cursor",
-      "limit",
-      "q",
-      "status",
-      "hold"
-    ],
-    "body": false
-  },
-  "intakeParcel": {
-    "method": "POST",
-    "path": "/parcels",
-    "query": [],
-    "body": true
-  },
-  "getParcel": {
-    "method": "GET",
-    "path": "/parcels/{parcelId}",
-    "query": [],
-    "body": false
-  },
-  "getReview": {
-    "method": "GET",
-    "path": "/parcels/{parcelId}/review",
+    "path": "/admin/users",
     "query": [
       "q",
-      "limit",
-      "cursor"
-    ],
-    "body": false
-  },
-  "reconcileParcel": {
-    "method": "POST",
-    "path": "/parcels/{parcelId}/reconciliation",
-    "query": [],
-    "body": true
-  },
-  "setHold": {
-    "method": "POST",
-    "path": "/parcels/{parcelId}/hold",
-    "query": [],
-    "body": true
-  },
-  "issueCredential": {
-    "method": "POST",
-    "path": "/parcels/{parcelId}/credentials",
-    "query": [],
-    "body": true
-  },
-  "verifyCredential": {
-    "method": "POST",
-    "path": "/parcels/{parcelId}/verifications",
-    "query": [],
-    "body": true
-  },
-  "confirmHandover": {
-    "method": "POST",
-    "path": "/parcels/{parcelId}/handover",
-    "query": [],
-    "body": true
-  },
-  "listNotifications": {
-    "method": "GET",
-    "path": "/notifications",
-    "query": [
+      "role",
       "cursor",
-      "limit",
-      "q"
+      "limit"
     ],
     "body": false
   },
-  "readNotification": {
+  "createUser": {
     "method": "POST",
-    "path": "/notifications/{notificationId}/read",
+    "path": "/admin/users",
     "query": [],
-    "body": false
+    "body": true
   },
-  "listReceipts": {
-    "method": "GET",
-    "path": "/receipts",
-    "query": [
-      "cursor",
-      "limit",
-      "q"
-    ],
-    "body": false
-  },
-  "getReceipt": {
-    "method": "GET",
-    "path": "/receipts/{receiptId}",
+  "updateUser": {
+    "method": "PATCH",
+    "path": "/admin/users/{userId}",
     "query": [],
-    "body": false
+    "body": true
   },
-  "resetDemo": {
+  "createHostel": {
     "method": "POST",
-    "path": "/demo/reset",
+    "path": "/admin/hostels",
     "query": [],
-    "body": false
+    "body": true
   },
-  "getStaffParcel": {
-    "method": "GET",
-    "path": "/staff/parcels/{parcelId}",
+  "updateHostel": {
+    "method": "PATCH",
+    "path": "/admin/hostels/{hostelId}",
     "query": [],
-    "body": false
-  },
-  "getStaffReceipt": {
-    "method": "GET",
-    "path": "/staff/receipts/{receiptId}",
-    "query": [],
-    "body": false
+    "body": true
   }
 } as const;

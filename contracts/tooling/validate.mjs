@@ -7,7 +7,10 @@ const source = YAML.parse(await readFile(new URL('../openapi.yaml', import.meta.
 await SwaggerParser.validate(structuredClone(source));
 const ids = Object.values(source.paths).flatMap(path => Object.values(path).map(op => op.operationId));
 if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Missing or duplicate operationId');
-console.log(`PASS: OpenAPI validation; ${ids.length} unique operations`);
+const permissions = ['PUBLIC', 'AUTH', 'MEMBER', 'OPERATOR', 'ADMIN'];
+for (const path of Object.values(source.paths)) for (const operation of Object.values(path))
+  if (!permissions.includes(operation['x-permission'])) throw new Error(`${operation.operationId}: x-permission must be one of ${permissions}`);
+console.log(`PASS: OpenAPI validation; ${ids.length} unique operations, each with x-permission`);
 const ajv = new Ajv({ strict: false, allErrors: true }); addFormats(ajv);
 ajv.addSchema({ $id: 'mailroom', components: source.components });
 for (const [name, example] of Object.entries(source.components.examples)) {
