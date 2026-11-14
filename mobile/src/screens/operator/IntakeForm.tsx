@@ -18,7 +18,7 @@ export function IntakeForm({
 }: {
   lookup: Schema<'Lookup'>;
   shelf: string;
-  onSaved: (parcel: Schema<'OperatorParcel'>, shelf: string) => void;
+  onSaved: (parcel: Schema<'OperatorParcel'>, draft: Draft) => void;
   onCancel: () => void;
 }) {
   const { api } = useSession();
@@ -41,7 +41,7 @@ export function IntakeForm({
 
   async function submit() {
     const parcel = await save.run(() => api.intakeParcel(intakeBody(draft)));
-    if (parcel) onSaved(parcel, draft.shelf.trim());
+    if (parcel) onSaved(parcel, draft);
   }
 
   return (

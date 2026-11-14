@@ -46,7 +46,7 @@ export async function link(
     parcelId: parcel.id,
     type: 'ARRIVAL',
     title: 'Your parcel is at the mailroom',
-    body: `${describe(parcel)} is waiting. Bring your college ID to collect it.`,
+    body: `${describe(parcel)} is waiting. Open the app and tap Collect now, then bring your college ID.`,
   });
   return true;
 }

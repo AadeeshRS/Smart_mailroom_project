@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { carrierName, intakeBody, matchText, parcelCode, type Draft } from '../src/parcels';
+import { carrierName, intakeBody, matchText, parcelCode, phoneUnused, type Draft } from '../src/parcels';
 
 const draft: Draft = {
   id: '6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d',
@@ -76,4 +76,8 @@ it('says who a parcel belongs to, or why it has nobody', () => {
   expect(matchText({ ...base, recipient, matchSource: 'CONTACT' })).toBe('Asha · 23CS1 (label contact)');
   expect(matchText({ ...base, matchFlag: 'AMBIGUOUS' })).toMatch(/Several members/);
   expect(matchText(base)).toBe('No member matched yet.');
+  // A typed phone the API dropped (masked) is flagged; a used one or a blank one isn't.
+  expect(phoneUnused(draft, base)).toBe(true);
+  expect(phoneUnused(draft, { ...base, labelPhone: '+919876543210' })).toBe(false);
+  expect(phoneUnused({ ...draft, labelPhone: ' ' }, base)).toBe(false);
 });

@@ -3,7 +3,8 @@ import type { Schema } from '../../api/service';
 import { useAction } from '../../hooks';
 import { Scanner } from '../../Scanner';
 import { useSession } from '../../session/SessionProvider';
-import { Button, Card, Feedback, Field, Muted, Page, SuccessMark } from '../../ui';
+import { phoneUnused, type Draft } from '../../parcels';
+import { Button, Card, Feedback, Field, Muted, Notice, Page, SuccessMark } from '../../ui';
 import { IntakeForm } from './IntakeForm';
 import { ParcelCard } from './ParcelCard';
 
@@ -13,7 +14,7 @@ export function ScanScreen() {
   const [scanning, setScanning] = useState(false);
   const [code, setCode] = useState('');
   const [lookup, setLookup] = useState<Schema<'Lookup'>>();
-  const [saved, setSaved] = useState<Schema<'OperatorParcel'>>();
+  const [saved, setSaved] = useState<{ parcel: Schema<'OperatorParcel'>; draft: Draft }>();
   const [shelf, setShelf] = useState(''); // kept between parcels: they usually go on the same shelf
   const find = useAction();
 
@@ -27,23 +28,31 @@ export function ScanScreen() {
     setCode('');
   }
 
-  if (saved)
+  if (saved) {
+    const unmatched = !saved.parcel.recipient;
     return (
       <Page title="Parcel saved">
         <SuccessMark />
-        <ParcelCard parcel={saved} />
-        {!saved.recipient && <Muted>It stays unmatched until it’s assigned in Parcels or a member requests it.</Muted>}
+        <ParcelCard parcel={saved.parcel} />
+        {unmatched && phoneUnused(saved.draft, saved.parcel) ? (
+          <Notice>
+            The phone wasn’t used for matching (masked or incomplete). Link this parcel with a request or manual assign.
+          </Notice>
+        ) : (
+          unmatched && <Muted>It stays unmatched until it’s assigned in Parcels or a member requests it.</Muted>
+        )}
         <Button label="Scan the next parcel" onPress={next} />
       </Page>
     );
+  }
   if (lookup)
     return (
       <IntakeForm
         lookup={lookup}
         shelf={shelf}
-        onSaved={(parcel, usedShelf) => {
-          setShelf(usedShelf);
-          setSaved(parcel);
+        onSaved={(parcel, draft) => {
+          setShelf(draft.shelf.trim());
+          setSaved({ parcel, draft });
         }}
         onCancel={next}
       />

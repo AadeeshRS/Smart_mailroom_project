@@ -34,6 +34,9 @@ export function matchText(parcel: Parcel) {
   return 'No member matched yet.';
 }
 
+/** The operator typed a label phone the API couldn't use (masked or incomplete), so it played no part in matching. */
+export const phoneUnused = (draft: Draft, parcel: Parcel) => !!draft.labelPhone.trim() && !parcel.labelPhone;
+
 export type Draft = {
   id: string;
   kind: 'AWB' | 'ORDER_ID';
