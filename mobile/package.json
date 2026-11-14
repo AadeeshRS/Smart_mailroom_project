@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "export:web": "expo export --platform web --max-workers 2",
-    "export:native": "expo export --platform android --platform ios --max-workers 2"
+    "export:native": "expo export --platform android --platform ios --max-workers 2",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -43,6 +45,7 @@
     "ajv-formats": "^3.0.1",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
+    "prettier": "^3.10.1",
     "typescript": "~6.0.3",
     "vitest": "^4.1.12"
   }

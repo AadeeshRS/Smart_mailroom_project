@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env dist/api/src/server.js",
     "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
@@ -12,7 +14,9 @@
     "generate": "prisma generate",
     "migrate": "prisma migrate deploy",
     "seed": "node --env-file-if-exists=.env --import tsx src/seed.ts",
-    "test": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/*.test.ts"
+    "test": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "dependencies": {
     "@fastify/cors": "11.3.1",
@@ -27,6 +31,7 @@
   "devDependencies": {
     "@types/node": "24.10.1",
     "@types/pg": "8.15.6",
+    "prettier": "3.10.1",
     "prisma": "7.10.1",
     "tsx": "4.20.6",
     "typescript": "5.9.3"

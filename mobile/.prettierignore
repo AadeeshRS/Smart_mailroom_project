@@ -1,0 +1,5 @@
+dist/
+dist-http/
+.expo/
+package-lock.json
+src/api/routes.generated.ts
