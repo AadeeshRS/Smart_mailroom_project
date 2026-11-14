@@ -1,0 +1,146 @@
+# History: the v1 README
+
+> Kept for the record (plan task 8.6). This was the README of v1: a reviewer log and closeout notes for the
+> earlier workflow (merchant orders, QR credentials, demo login, mock mode), which v2 replaced. **Don't follow
+> its setup steps**; the current ones are in the [README](../README.md).
+
+## Original text
+
+Independent reviewer approval authorizes backend implementation and integration from frontend baseline `2bc1945a61334dc179eeb6ee73b621b1c08b3cba`. The frozen OpenAPI contract is version **0.2.0**; its reviewed SHA-256 was `21C80EFA5840CF813326DB5E5416FEDE9767860435D76C4CB57155A22BC5A653`. Only the authorized approval labels and intake-normalization wording changed. Methods, schemas, projections and business semantics remain frozen. This is a synthetic development application, **not production-ready**. No college SSO, real notifications, shopping or courier integration exists.
+
+`api/` is one Fastify/TypeScript/Prisma application with PostgreSQL. `mobile/` is the Expo Router app with explicit mock/HTTP adapters. `contracts/openapi.yaml` is canonical; declarations and HTTP route metadata are generated reproducibly. Supplied references and local test artifacts remain outside Git.
+
+Use Node **24 LTS** (verified 24.22.1), npm 11 and PostgreSQL 17. Backend versions: Fastify 5.12.7, Prisma/client/PG adapter 7.10.1, pg 8.16.3, TypeScript 5.9.3. Prisma 7 is a stable supported line; the available Prisma 8 release candidate was not selected. See [Prisma requirements](https://www.prisma.io/docs/orm/reference/system-requirements), [PostgreSQL adapter](https://www.prisma.io/docs/orm/v7/core-concepts/supported-databases/postgresql) and [Fastify LTS](https://fastify.dev/docs/latest/Reference/LTS/). Mobile: Expo SDK 58.0.25, React 19.3.0, React Native 0.88.1, Expo Router 58.0.31, TypeScript 6.0.3.
+
+## Setup and run
+
+Create **dedicated** `smart_mailroom_dev` and `smart_mailroom_test` databases. Never use unrelated databases. Development and tests must have different URLs. Reset/seed refuse other database names and reset refuses any non-synthetic user. No table is shared with another application.
+
+For the installed Windows PostgreSQL binaries, an optional isolated local-only cluster can be created without touching the existing PostgreSQL service:
+
+```powershell
+$pgBin = 'C:\Program Files\PostgreSQL\17\bin'
+$mailroomData = Join-Path $env:TEMP 'smart-mailroom-pg17'
+# Run initdb only once, against this new directory. Trust is for this loopback-only development cluster.
+& "$pgBin\initdb.exe" -D $mailroomData -U mailroom_admin -A trust --encoding=UTF8 --locale=C
+& "$pgBin\pg_ctl.exe" -D $mailroomData -l "$env:TEMP\smart-mailroom-pg17.log" -o '-p 55432 -h 127.0.0.1' -w start
+& "$pgBin\createdb.exe" -h 127.0.0.1 -p 55432 -U mailroom_admin smart_mailroom_dev
+& "$pgBin\createdb.exe" -h 127.0.0.1 -p 55432 -U mailroom_admin smart_mailroom_test
+```
+
+From the repository root:
+
+```powershell
+cd contracts
+npm.cmd ci --cache "$env:TEMP\smart-mailroom-npm-cache"
+npm.cmd run generate
+npm.cmd run validate
+npm.cmd run check
+cd ../api
+npm.cmd ci --cache "$env:TEMP\smart-mailroom-npm-cache"
+Copy-Item .env.example .env
+# Edit .env: DATABASE_URL, synthetic DEMO_PASSCODE, strong persistent CREDENTIAL_PEPPER.
+# The optional cluster URL is postgresql://mailroom_admin@127.0.0.1:55432/smart_mailroom_dev
+# Generate a pepper locally: node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+npm.cmd run generate
+npm.cmd run migrate
+npm.cmd run seed
+npm.cmd run build
+npm.cmd start
+```
+
+Keep `.env` local. Set `NODE_ENV=development`, `DEMO_ENABLED=true`, and a fictitious passcode of at least 12 characters. Seeds print **random server account IDs** for Asha Rao (DEMO1001), Neel Shah (DEMO1002), and Mira Sen (staff); identities survive reseeding and reset. Existing password hashes are preserved. Enter the passcode used at first seed. Production environments always disable demo login/reset, even if `DEMO_ENABLED=true`.
+
+In another terminal:
+
+```powershell
+cd mobile
+npm.cmd ci --cache "$env:TEMP\smart-mailroom-npm-cache"
+Copy-Item .env.example .env
+# Set EXPO_PUBLIC_API_MODE=http and EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:3000/v1
+# Optionally replace the three account-ID placeholders with actual seed output.
+npm.cmd start -- --clear
+```
+
+Without configured account choices, enter a seeded server account ID manually. Roles come from the server, never a client role selector. HTTP mode shows a persistent HTTP/PostgreSQL demo banner and hides simulated-offline/response-loss controls. Requests use bearer sessions in volatile memory, no-store fetches, bounded timeouts and typed errors. HTTP failures **never** fall back to mock fixtures. Sessions expire in 30 minutes and logout revokes them on the server.
+
+Use `EXPO_PUBLIC_API_MODE=mock` for the independent local demo (public mock passcode `mailroom-demo`). Clear Expo's bundler cache when switching modes because public configuration is compiled into the bundle. Account IDs and API URLs are public configuration; never place secrets in `EXPO_PUBLIC_*`.
+
+API URL examples: web/iOS simulator `http://127.0.0.1:3000/v1`; Android emulator `http://10.0.2.2:3000/v1`; physical device `http://<development-computer-LAN-IP>:3000/v1`. For LAN testing explicitly bind `HOST=0.0.0.0`, configure the web CORS origin/firewall, and use a development network. HTTPS is required for deployment; browser camera APIs also require a secure context. These examples are not device-test evidence.
+
+## Final device demonstration (manual hardware check remaining)
+
+Physical label/collection-QR decoding and native device execution are **NOT TESTED**. No phone is attached. Windows detects a USB webcam, but no physical fixture was presented; at the user's direction the closeout finishes with this manual handoff. Camera inventory, mock fallback tests and exports do not establish a physical scan.
+
+1. Start the existing isolated cluster if stopped: `& 'C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe' -D "$env:TEMP\smart-mailroom-pg17" -l "$env:TEMP\smart-mailroom-pg17.log" -o '-p 55432 -h 127.0.0.1' -w start`. Do not reinitialize it. In `api/`, run `npm.cmd run migrate`, `npm.cmd run seed`, `npm.cmd run build`, then `npm.cmd start`. Keep the printed seeded account IDs and use the synthetic passcode configured in local `.env`.
+2. For a physical device set `api/.env` to `HOST=0.0.0.0` and `PORT=3000`, then restart the API. In `mobile/.env` set `EXPO_PUBLIC_API_MODE=http` and `EXPO_PUBLIC_API_BASE_URL=http://<computer-LAN-IP>:3000/v1`; configure the actual seeded account IDs or enter them at login. In another terminal run `npm.cmd start -- --clear` from `mobile/`. Open an SDK-58-compatible Expo Go/development client on the same network. Browser camera testing requires localhost or HTTPS; plain LAN HTTP is not a secure camera context. Web/iOS simulator URLs use `127.0.0.1`; Android emulator uses `10.0.2.2`.
+3. As Asha, register AMAZON order **AMZ-CLOSEOUT-DEMO-001**. Show order-ID help. Use a new order/physical sticker or the explicit development reset for a repeated demonstration.
+4. Open or print the prepared ignored fixture `.scratch/demo/synthetic-label.html` (SVG beside it). As staff choose **Receive a parcel → Scan label barcode / QR**, allow the actual camera, and optically scan it. Confirm decoded text equals the order ID, classify **ORDER_ID / AMAZON**, and separately enter printed evidence `asha@students.example.invalid` / `DEMO1001`, storage **Rack A1**, and physical reference **DEMO-CLOSEOUT-BOX-001**. Review and save. Record the device/OS/client and actual scan result; manual entry is only a fallback and must not be recorded as scanning PASS.
+5. Confirm the parcel matched Asha's request. As Asha, open the parcel/inbox, read the arrival notification, and request the ten-minute OTP/QR. Delivery is simulated; nothing is sent externally.
+6. Display the live collection QR on a second screen. In the staff parcel screen choose **Verify collection credential → Scan student collection QR** and scan it using a real camera. Inspect the returned student, parcel and storage details. Verification alone must leave the parcel uncollected.
+7. Explicitly check physical-handover confirmation and save the receipt. Search the CLOSED parcel and reopen its retained receipt after signing in again. For an actual reuse attempt, leave a second staff client on the verification form before handover; afterward submit the original QR/OTP there and confirm **ALREADY_COLLECTED**, with only one receipt. Otherwise verify collection controls are disabled and leave the hardware reuse check pending; automated HTTP/PostgreSQL tests cover server rejection separately.
+
+The fixture contains only a fictitious order reference; it is not a collection credential. On a fresh checkout, regenerate a printable QR from `mobile/` without adding dependencies:
+
+```powershell
+New-Item -ItemType Directory -Force ../.scratch/demo | Out-Null
+node -e "require('qrcode').toString('AMZ-CLOSEOUT-DEMO-001',{type:'svg',width:480,margin:4}).then(svg=>require('node:fs').writeFileSync('../.scratch/demo/synthetic-label.svg',svg))"
+```
+
+## Persistence and invariants
+
+Every operation takes a shared PostgreSQL **transaction advisory lock**, using READ COMMITTED. This intentionally serializes domain operations across API processes for a small mailroom, including concurrent claims/intake/reconciliation/issuance/confirmation. Constraints independently enforce one active order per student/platform/reference, unique physical intake reference, one ACTIVE credential per parcel, one permanent handover per parcel and one result per principal/operation/key. Deadlock/serialization conflicts retry at most three attempts. Transaction tests assert rollback of the handover, credential/verification consumption, parcel closure, audit, outbox and idempotency together. This favors simple correctness over high throughput; direct database writers must not bypass the application locking protocol.
+
+Audit/decision/handover rows are append-only; a database trigger prevents modification of CLOSED parcels. Foreign keys restrict deletion. Explicit development reset is the only bypass, executes in a transaction, preserves provisioned users, and deletes only these dedicated synthetic project tables. Database administrator privileges are not an application authorization mechanism; production least-privilege deployment remains a separate review concern.
+
+Matching uses identifier kind, approved namespace and namespace-specific normalized value. Original values are retained internally. Unique matching also requires independent authoritative profile evidence and no contradictions. Tracking reuse preserves new intake unassigned and holds affected uncollected assignments; merchant-order split shipments remain separate eligible parcels. Reconciliation records checklist, reason and an evidence fingerprint; new relevant evidence reopens review and invalidates credentials. Closed history cannot transfer.
+
+Passcodes use salted **scrypt N=131072/r=8/p=1** ([OWASP parameters](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)); legacy demo hashes upgrade after successful login. Bearer tokens contain 256 random bits; the database stores SHA-256 digests. Operational IDs contain at least 128 random bits. OTP/QR digests use HMAC-SHA-256 with a separate persistent server pepper and credential-specific domain separation, protecting six-digit OTPs against database-only offline enumeration. Ordinary database records and logs never contain OTPs, QR tokens or bearer secrets.
+
+Credentials last ten minutes; explicit replacement revokes old OTP/QR presentations. Five failed OTP attempts invalidate the current credential. Issuance is limited to six fresh requests per minute per student/parcel; verification to twenty attempts per minute per staff/parcel; demo login to twenty attempts per minute per source IP. Quota validation errors use existing frozen codes with `retryable=true` and a one-minute retry instruction. The five-failure OTP response retains its frozen 429 ATTEMPTS_EXCEEDED semantics. Verification binds current credential, revision and staff session for at most two minutes and never completes collection.
+
+Successful ordinary write results retain principal/operation/key fingerprints for 24 hours. Handover results remain with permanent receipts; same-key replay runs before expiry/lifecycle checks and survives API restart and staff logout/login. Issuance stores only non-secret retry metadata for 24 hours; original response replay is available only from the current session's volatile, unexpired cache. Losing that cache returns ISSUANCE_RETRY_UNAVAILABLE; recovery explicitly replaces with a new key. No plaintext database replay envelope exists.
+
+The client saves original uncertain registration/intake/reconciliation requests and confirmation requests, scoped by backend URL and authenticated account. The overview exposes recovery actions. Confirmation recovery persists no OTP/QR/session token; it never automatically invents a new key. Saved ordinary intake/review requests may contain synthetic label evidence and are removed after recovery. Local storage is not a server authorization boundary.
+
+Ordinary recovery stops at **24 hours from the first attempt**; invalid/future timestamps also stop replay. Expired originals remain available for investigation: inspect current records read-only, explicitly acknowledge a separately reviewed new operation, then complete its normal form with a new key. The archived original request/key cannot be submitted as fresh work. A reset attempted through the app fences all locally saved accounts for that backend before sending reset, including an uncertain reset response. Permanent handover recovery is separate and still replays committed receipts beyond 24 hours and restart. Relevant evidence changes advance even an unassigned parcel's revision; unrelated registrations do not. Replacement OTPs exclude the latest credential and every still-unexpired historical code using protected digest comparisons, trying at most 32 random proposals before a safe failure that preserves the current credential.
+
+Pagination stores 15-minute server snapshots: membership/order freeze, concurrent inserts wait for a new first page, each page rechecks current ownership and returns current projections. Candidate pages are searchable, default 20/max 50. Common student projections explicitly exclude internal evidence, staff actors and review reasons, including search side channels.
+
+Arrival/collection notifications and PENDING outbox attempts commit in the business transaction. A separate deterministic worker marks simulated attempts ACCEPTED; it sends nothing and never claims DELIVERED. Delivery-result processing deduplicates attempt/event IDs and rejects stale/terminal updates. Inbox availability/readAt remain independent of delivery status. No student/staff endpoint can submit provider results.
+
+## Verification
+
+Create local `api/.env.test` using `.env.example`, with `NODE_ENV=test`, `DEMO_ENABLED=true`, a test pepper/passcode, and the **smart_mailroom_test** URL. Then:
+
+```powershell
+cd api
+node --env-file=.env.test node_modules/prisma/build/index.js migrate deploy
+npm.cmd run build
+npm.cmd test
+npm.cmd audit
+# Builds a separate HTTP web export using the test database's actual seeded account IDs.
+node --env-file=.env.test --import tsx tests/export-http.ts
+cd ../mobile
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd test
+node node_modules/playwright/cli.js install chromium
+node node_modules/playwright/cli.js test --config playwright.http.config.ts
+# Development renderer: empty-text warning regression and reduced-motion behavior.
+node node_modules/playwright/cli.js test --config playwright.dev.config.ts
+# Separate local mock regression suite; clear configuration cache before exporting.
+$env:EXPO_PUBLIC_API_MODE='mock'
+node node_modules/expo/bin/cli export --clear --platform web --max-workers 2
+node node_modules/playwright/cli.js test --config playwright.config.ts
+node node_modules/expo/bin/cli export --platform android --platform ios --max-workers 2 --output-dir dist/native
+npx.cmd expo install --check
+```
+
+Run database tests and HTTP browser tests sequentially: both intentionally reset the isolated test dataset. The HTTP browser supervisor binds loopback ports 3100/3101 and web port 8082; its restart control is test-only and absent from the API application. The recovery browser test waits past real verification expiry, restarts the actual API child process, reloads the browser, and asserts one original PostgreSQL receipt/key. Mock browser tests use port 8081. Logs, traces, screenshots and exports are ignored. Physical camera decoding and native device execution remain **NOT TESTED**; exports validate JavaScript bundling only. Real SSO, real providers, production deployment and security/scale review remain outside this task.
+
+The development browser suite uses the isolated test database, API port 3100 and Metro port 8083. Run it after the other database/browser suites. It checks React Native's development-only empty-text warnings on login and forms, button press feedback, and live reduced-motion preference changes. Short heading entrances and a saved-handover checkmark use the built-in Animated API; OS/browser reduced-motion settings disable them. No additional animation dependency is required.
+
+Backend `npm audit` currently reports **zero advisories**. Frontend `npm audit` reports **8 moderate** advisories, all `minimatch` reached through `@typescript-eslint` (ESLint tooling). They affect development only, not the app bundle. The SDK 58 upgrade cleared the earlier decode-uri-component, Zod and deepmerge advisories.
+
+Stop for independent final review after this backend/integration delivery. No external deployment is authorized or performed.
