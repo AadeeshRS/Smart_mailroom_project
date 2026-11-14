@@ -38,8 +38,7 @@ jobs:
       # CI-only throwaway values; the database lives only for this job.
       DATABASE_URL: postgresql://mailroom_admin:ci@localhost:5432/smart_mailroom_test
       NODE_ENV: test
-      DEMO_ENABLED: 'true'
-      DEMO_PASSCODE: ci-demo-passcode
+      ALLOWED_EMAIL_DOMAINS: college.example
       CREDENTIAL_PEPPER: ci-only-pepper-0123456789abcdef0123456789abcdef
       HOST: 127.0.0.1
       PORT: '3000'
