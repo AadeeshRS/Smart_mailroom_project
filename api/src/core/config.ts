@@ -18,6 +18,8 @@ export type Config = {
   collectionCodeMinutes: number;
   /** Parcels in the mailroom longer than this many days count as waiting too long. */
   waitingTooLongDays: number;
+  /** A linked parcel waiting this many days gets an automatic reminder, and another every this many days. */
+  reminderAfterDays: number;
 };
 
 const count = (value: string | undefined, fallback: number, name: string) => {
@@ -64,6 +66,7 @@ export function config(env = process.env): Config {
     requestExpiryDays: count(env.REQUEST_EXPIRY_DAYS, 30, 'REQUEST_EXPIRY_DAYS'),
     collectionCodeMinutes: count(env.COLLECTION_CODE_MINUTES, 15, 'COLLECTION_CODE_MINUTES'),
     waitingTooLongDays: count(env.WAITING_TOO_LONG_DAYS, 7, 'WAITING_TOO_LONG_DAYS'),
+    reminderAfterDays: count(env.REMINDER_AFTER_DAYS, 3, 'REMINDER_AFTER_DAYS'),
   };
   if (environment === 'production') {
     const missing = ['RESEND_API_KEY', 'MAIL_FROM', 'ALLOWED_EMAIL_DOMAINS'].filter(name => !env[name]?.trim());

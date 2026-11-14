@@ -1,3 +1,4 @@
+import type { Parcel, PrismaClient } from '@prisma/client';
 import { signedIn, type Ctx, type Input } from '../../contract.js';
 import { fail } from '../../core/errors.js';
 import { id } from '../../core/security.js';
@@ -8,6 +9,13 @@ import { parcelInclude, toParcel } from '../parcels/service.js';
 const DAY = 86_400_000;
 const waiting = { status: 'IN_MAILROOM' } as const;
 const leftAlready = () => fail('NOT_IN_MAILROOM', 'This parcel has already left the mailroom.');
+const reminder = (parcel: Parcel, userId: string) => ({
+  userId,
+  parcelId: parcel.id,
+  type: 'REMINDER',
+  title: 'Your parcel is still waiting',
+  body: `${describe(parcel)} is still at the mailroom. Open the app and tap Collect now, then bring your college ID.`,
+});
 
 /** Dashboard counts: every one is an indexed count, run in parallel. */
 export async function stats(input: Input<'getStats'>, ctx: Ctx) {
@@ -67,15 +75,33 @@ export async function remind(input: Input<'remindParcel'>, ctx: Ctx) {
     await tx.auditEvent.create({
       data: { id: id('aud'), actorId: user.id, parcelId: parcel.id, action: 'REMINDED', detail: 'Reminder sent' },
     });
-    await queue(tx, {
-      userId: memberId,
-      parcelId: parcel.id,
-      type: 'REMINDER',
-      title: 'Your parcel is still waiting',
-      body: `${describe(parcel)} is still at the mailroom. Open the app and tap Collect now, then bring your college ID.`,
-    });
+    await queue(tx, reminder(parcel, memberId));
   });
   return { ok: true as const };
+}
+
+/** The worker's automatic reminders: a linked parcel waiting `everyDays` days gets one, then another every
+ * `everyDays` days. The update is conditional on lastRemindedAt, so a run racing the admin's button reminds once. */
+export async function remindWaiting(db: PrismaClient, now: Date, everyDays: number) {
+  const due = new Date(+now - everyDays * DAY);
+  const parcels = await db.parcel.findMany({
+    where: {
+      ...waiting,
+      recipientId: { not: null },
+      receivedAt: { lte: due },
+      OR: [{ lastRemindedAt: null }, { lastRemindedAt: { lte: due } }],
+    },
+    orderBy: { receivedAt: 'asc' },
+    take: 200,
+  });
+  for (const parcel of parcels)
+    await db.$transaction(async tx => {
+      const { count } = await tx.parcel.updateMany({
+        where: { id: parcel.id, ...waiting, recipientId: parcel.recipientId, lastRemindedAt: parcel.lastRemindedAt },
+        data: { lastRemindedAt: now },
+      });
+      if (count) await queue(tx, reminder(parcel, parcel.recipientId!));
+    });
 }
 
 /** Returned to the sender: a conditional update, so a parcel collected a moment ago can't be returned too. */

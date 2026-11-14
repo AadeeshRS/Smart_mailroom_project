@@ -58,6 +58,8 @@ enum PushState {
   PENDING
   SENT
   FAILED
+  /// The member had no device to push to.
+  SKIPPED
 }
 
 model User {
@@ -83,17 +85,16 @@ model User {
   roomNumber      String?
   createdAt       DateTime    @default(now())
 
-  codes             EmailCode[]
-  sessions          Session[]
-  devices           Device[]
-  parcels           Parcel[]        @relation("Recipient")
-  receivedParcels   Parcel[]        @relation("ReceivedBy")
-  collectedParcels  Parcel[]        @relation("CollectedBy")
-  requests          ParcelRequest[]
-  collections       Collection[]    @relation("Collector")
-  handovers         Collection[]    @relation("Operator")
-  notifications     Notification[]
-  audits            AuditEvent[]
+  codes            EmailCode[]
+  sessions         Session[]
+  parcels          Parcel[]        @relation("Recipient")
+  receivedParcels  Parcel[]        @relation("ReceivedBy")
+  collectedParcels Parcel[]        @relation("CollectedBy")
+  requests         ParcelRequest[]
+  collections      Collection[]    @relation("Collector")
+  handovers        Collection[]    @relation("Operator")
+  notifications    Notification[]
+  audits           AuditEvent[]
 
   @@index([altPhone])
   @@index([personalEmail])
@@ -129,19 +130,22 @@ model Session {
   createdAt   DateTime  @default(now())
   expiresAt   DateTime
   revokedAt   DateTime?
+  devices     Device[]
 
   @@index([userId])
   @@index([expiresAt])
 }
 
+/// An Expo push token, tied to the session that registered it: a revoked session gets no pushes, and deleting the
+/// session deletes the token.
 model Device {
   token     String   @id
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   platform  String
   createdAt DateTime @default(now())
 
-  @@index([userId])
+  @@index([sessionId])
 }
 
 model Parcel {
@@ -236,6 +240,8 @@ model Notification {
   readAt       DateTime?
   pushState    PushState @default(PENDING)
   pushAttempts Int       @default(0)
+  /// The next push try waits until then (backoff after a failed try).
+  pushAfter    DateTime  @default(now())
 
   @@index([userId, createdAt])
   @@index([pushState])

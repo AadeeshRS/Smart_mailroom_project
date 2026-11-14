@@ -7,7 +7,7 @@ const settings = config();
 const db = database(settings.databaseUrl);
 const app = await createApp(db, settings);
 await app.listen({ host: process.env.HOST ?? '127.0.0.1', port: Number(process.env.PORT ?? 3000) });
-const stopWorker = startWorker(db);
+const stopWorker = startWorker(db, settings);
 
 const close = async () => {
   stopWorker();

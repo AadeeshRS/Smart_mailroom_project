@@ -13,6 +13,7 @@ import { handlers as admin } from './modules/admin/handlers.js';
 import { handlers as auth } from './modules/auth/handlers.js';
 import { handlers as collection } from './modules/collection/handlers.js';
 import { handlers as hostels } from './modules/hostels/handlers.js';
+import { handlers as notifications } from './modules/notifications/handlers.js';
 import { handlers as parcels } from './modules/parcels/handlers.js';
 import { handlers as requests } from './modules/requests/handlers.js';
 import { handlers as users } from './modules/users/handlers.js';
@@ -34,6 +35,7 @@ const handlers: Partial<Handlers> = {
   ...requests,
   ...collection,
   ...admin,
+  ...notifications,
 };
 
 /** Every contract operation, with its $ref parameters resolved. */

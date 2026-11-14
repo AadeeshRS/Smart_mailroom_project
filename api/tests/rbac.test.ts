@@ -48,6 +48,9 @@ const EXPECTED: Record<Operation, Permission> = {
   listAging: 'ADMIN',
   remindParcel: 'ADMIN',
   returnParcel: 'ADMIN',
+  registerDevice: 'MEMBER',
+  listNotifications: 'MEMBER',
+  markNotificationsRead: 'MEMBER',
 };
 
 /** Who may call each permission level, independent of src/core/rbac.ts. */

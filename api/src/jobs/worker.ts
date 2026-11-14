@@ -1,4 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
+import type { Config } from '../core/config.js';
+import { remindWaiting } from '../modules/admin/service.js';
+import { sendPushes } from '../modules/notifications/push.js';
 
 const DAY = 86_400_000;
 
@@ -22,18 +25,24 @@ export async function cleanup(db: PrismaClient, now: Date) {
 
 /** One background loop per API process. ponytail: fine for one instance; run it in a separate service
  * (or take an advisory lock per run) before scaling the API out. */
-export function startWorker(db: PrismaClient, everyMs = 60_000) {
+export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000) {
   let running = false;
   const timer = setInterval(async () => {
     if (running) return;
     running = true;
-    try {
-      await cleanup(db, new Date());
-    } catch (error) {
-      console.error('Worker run failed:', error);
-    } finally {
-      running = false;
-    }
+    const now = new Date();
+    const jobs = [
+      () => cleanup(db, now),
+      () => remindWaiting(db, now, settings.reminderAfterDays),
+      () => sendPushes(db, now),
+    ];
+    for (const job of jobs)
+      try {
+        await job();
+      } catch (error) {
+        console.error('Worker job failed:', error);
+      }
+    running = false;
   }, everyMs);
   timer.unref();
   return () => clearInterval(timer);
