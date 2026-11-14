@@ -178,5 +178,35 @@ export const routes = {
     "path": "/me/requests/{requestId}",
     "query": [],
     "body": false
+  },
+  "collectNow": {
+    "method": "POST",
+    "path": "/me/collection",
+    "query": [],
+    "body": false
+  },
+  "cancelCollection": {
+    "method": "DELETE",
+    "path": "/me/collection",
+    "query": [],
+    "body": false
+  },
+  "listCollections": {
+    "method": "GET",
+    "path": "/collections",
+    "query": [],
+    "body": false
+  },
+  "verifyCollection": {
+    "method": "POST",
+    "path": "/collections/{collectionId}/verify",
+    "query": [],
+    "body": true
+  },
+  "completeCollection": {
+    "method": "POST",
+    "path": "/collections/{collectionId}/complete",
+    "query": [],
+    "body": true
   }
 } as const;

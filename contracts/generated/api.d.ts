@@ -410,6 +410,84 @@ export interface paths {
         patch: operations["updateRequest"];
         trace?: never;
     };
+    "/me/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Collect now: one code for all the member's parcels waiting in the mailroom
+         * @description Replaces the member's open code, if any. The code is valid for COLLECTION_CODE_MINUTES (default 15) and appears only in this response. NOT_FOUND when nothing is waiting. At most 6 per minute (RATE_LIMITED).
+         */
+        post: operations["collectNow"];
+        /** Cancel the member's open code, if there is one */
+        delete: operations["cancelCollection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Giveaway queue: open codes, oldest first, each member once with their waiting parcels */
+        get: operations["listCollections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collections/{collectionId}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check the code the member shows; 5 wrong tries cancel it
+         * @description CODE_INVALID for a wrong code; CODE_EXPIRED once the code has expired, was cancelled or was replaced; ALREADY_COLLECTED once it has been used. A verified code stays usable for another COLLECTION_CODE_MINUTES while the operator ticks the parcels.
+         */
+        post: operations["verifyCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collections/{collectionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand over the ticked parcels of a verified code
+         * @description All or nothing: if any ticked parcel is no longer waiting for this member, nothing is handed over (ALREADY_COLLECTED), and so does a second complete. If a ticked parcel's label name is empty or shares no word with the member's name, `idChecked` must be true (else ID_CHECK_REQUIRED); the audit entry records it. Unticked parcels stay in the mailroom.
+         */
+        post: operations["completeCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -675,8 +753,50 @@ export interface components {
         MyRequestList: {
             items: components["schemas"]["MyRequest"][];
         };
+        MyCollection: {
+            otp: string;
+            /** Format: date-time */
+            expiresAt: string;
+            parcels: components["schemas"]["MyParcel"][];
+        };
+        HandoverParcel: {
+            id: string;
+            awb: string | null;
+            orderId: string | null;
+            carrier: string | null;
+            shelf: string;
+            labelName: string | null;
+            /** @description The label name shares a word with the member's name. When false, check their ID card. */
+            nameMatches: boolean;
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        OperatorCollection: {
+            id: string;
+            /** @enum {string} */
+            status: "PENDING" | "VERIFIED";
+            member: components["schemas"]["MemberSummary"];
+            /** Format: date-time */
+            requestedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            attemptsLeft: number;
+            /** @description The member's parcels waiting in the mailroom now, oldest first */
+            parcels: components["schemas"]["HandoverParcel"][];
+        };
+        CollectionList: {
+            items: components["schemas"]["OperatorCollection"][];
+        };
+        VerifyCollectionInput: {
+            otp: components["schemas"]["Code"];
+        };
+        CompleteCollectionInput: {
+            parcelIds: components["schemas"]["Id"][];
+            /** @description The operator checked the member's college ID card */
+            idChecked: boolean;
+        };
         /** @enum {string} */
-        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "REQUEST_EXISTS" | "REQUEST_CLOSED" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
+        ErrorCode: "VALIDATION" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "EMAIL_NOT_VERIFIED" | "ACCOUNT_DISABLED" | "EMAIL_DOMAIN_NOT_ALLOWED" | "CODE_INVALID" | "PHONE_TAKEN" | "ID_NUMBER_TAKEN" | "EMAIL_TAKEN" | "NAME_TAKEN" | "LAST_ADMIN" | "SELF_CHANGE" | "ALREADY_ASSIGNED" | "NOT_IN_MAILROOM" | "REQUEST_EXISTS" | "REQUEST_CLOSED" | "CODE_EXPIRED" | "ALREADY_COLLECTED" | "ID_CHECK_REQUIRED" | "RATE_LIMITED" | "NETWORK" | "INTERNAL";
         ErrorEnvelope: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -766,6 +886,7 @@ export interface components {
         Limit: number;
         ParcelId: components["schemas"]["Id"];
         RequestId: components["schemas"]["Id"];
+        CollectionId: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: never;
@@ -1278,6 +1399,107 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Request"];
+            default: components["responses"]["Error"];
+        };
+    };
+    collectNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The code and the parcels it covers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyCollection"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["Ok"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listCollections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open codes (at most 50) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    verifyCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyCollectionInput"];
+            };
+        };
+        responses: {
+            /** @description The verified code with the member and their parcels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorCollection"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    completeCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteCollectionInput"];
+            };
+        };
+        responses: {
+            200: components["responses"]["Ok"];
             default: components["responses"]["Error"];
         };
     };

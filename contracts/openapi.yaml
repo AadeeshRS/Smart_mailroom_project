@@ -404,6 +404,84 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         default: { $ref: '#/components/responses/Error' }
+  /me/collection:
+    post:
+      operationId: collectNow
+      summary: 'Collect now: one code for all the member''s parcels waiting in the mailroom'
+      description: >-
+        Replaces the member's open code, if any. The code is valid for COLLECTION_CODE_MINUTES
+        (default 15) and appears only in this response. NOT_FOUND when nothing is waiting. At most 6
+        per minute (RATE_LIMITED).
+      x-permission: MEMBER
+      responses:
+        '200':
+          description: The code and the parcels it covers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyCollection' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: cancelCollection
+      summary: Cancel the member's open code, if there is one
+      x-permission: MEMBER
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
+  /collections:
+    get:
+      operationId: listCollections
+      summary: 'Giveaway queue: open codes, oldest first, each member once with their waiting parcels'
+      x-permission: OPERATOR
+      responses:
+        '200':
+          description: Open codes (at most 50)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollectionList' }
+        default: { $ref: '#/components/responses/Error' }
+  /collections/{collectionId}/verify:
+    post:
+      operationId: verifyCollection
+      summary: Check the code the member shows; 5 wrong tries cancel it
+      description: >-
+        CODE_INVALID for a wrong code; CODE_EXPIRED once the code has expired, was cancelled or was
+        replaced; ALREADY_COLLECTED once it has been used. A verified code stays usable for another
+        COLLECTION_CODE_MINUTES while the operator ticks the parcels.
+      x-permission: OPERATOR
+      parameters:
+        - { $ref: '#/components/parameters/CollectionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyCollectionInput' }
+      responses:
+        '200':
+          description: The verified code with the member and their parcels
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperatorCollection' }
+        default: { $ref: '#/components/responses/Error' }
+  /collections/{collectionId}/complete:
+    post:
+      operationId: completeCollection
+      summary: Hand over the ticked parcels of a verified code
+      description: >-
+        All or nothing: if any ticked parcel is no longer waiting for this member, nothing is handed
+        over (ALREADY_COLLECTED), and so does a second complete. If a ticked parcel's label name is
+        empty or shares no word with the member's name, `idChecked` must be true (else
+        ID_CHECK_REQUIRED); the audit entry records it. Unticked parcels stay in the mailroom.
+      x-permission: OPERATOR
+      parameters:
+        - { $ref: '#/components/parameters/CollectionId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteCollectionInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        default: { $ref: '#/components/responses/Error' }
 components:
   parameters:
     Q: { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
@@ -411,6 +489,7 @@ components:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     ParcelId: { name: parcelId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
     RequestId: { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    CollectionId: { name: collectionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
   responses:
     Ok:
       description: Done
@@ -834,6 +913,68 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/MyRequest' } }
+    MyCollection:
+      type: object
+      additionalProperties: false
+      required: [otp, expiresAt, parcels]
+      properties:
+        otp: { type: string, pattern: '^[0-9]{6}$' }
+        expiresAt: { type: string, format: date-time }
+        parcels: { type: array, items: { $ref: '#/components/schemas/MyParcel' } }
+    HandoverParcel:
+      type: object
+      additionalProperties: false
+      required: [id, awb, orderId, carrier, shelf, labelName, nameMatches, receivedAt]
+      properties:
+        id: { type: string }
+        awb: { type: string, nullable: true }
+        orderId: { type: string, nullable: true }
+        carrier: { type: string, nullable: true }
+        shelf: { type: string }
+        labelName: { type: string, nullable: true }
+        nameMatches:
+          type: boolean
+          description: The label name shares a word with the member's name. When false, check their ID card.
+        receivedAt: { type: string, format: date-time }
+    OperatorCollection:
+      type: object
+      additionalProperties: false
+      required: [id, status, member, requestedAt, expiresAt, attemptsLeft, parcels]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [PENDING, VERIFIED] }
+        member: { $ref: '#/components/schemas/MemberSummary' }
+        requestedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        attemptsLeft: { type: integer, minimum: 0, maximum: 5 }
+        parcels:
+          description: The member's parcels waiting in the mailroom now, oldest first
+          type: array
+          items: { $ref: '#/components/schemas/HandoverParcel' }
+    CollectionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OperatorCollection' } }
+    VerifyCollectionInput:
+      type: object
+      additionalProperties: false
+      required: [otp]
+      properties:
+        otp: { $ref: '#/components/schemas/Code' }
+    CompleteCollectionInput:
+      type: object
+      additionalProperties: false
+      required: [parcelIds, idChecked]
+      properties:
+        parcelIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Id' }
+        idChecked: { type: boolean, description: The operator checked the member's college ID card }
     ErrorCode:
       type: string
       enum:
@@ -855,6 +996,9 @@ components:
         - NOT_IN_MAILROOM
         - REQUEST_EXISTS
         - REQUEST_CLOSED
+        - CODE_EXPIRED
+        - ALREADY_COLLECTED
+        - ID_CHECK_REQUIRED
         - RATE_LIMITED
         - NETWORK
         - INTERNAL
@@ -877,6 +1021,9 @@ components:
         NOT_IN_MAILROOM: 409
         REQUEST_EXISTS: 409
         REQUEST_CLOSED: 409
+        CODE_EXPIRED: 409
+        ALREADY_COLLECTED: 409
+        ID_CHECK_REQUIRED: 400
         RATE_LIMITED: 429
         NETWORK: 503
         INTERNAL: 500
@@ -924,7 +1071,15 @@ components:
       summary: A member asking for a parcel, with the courier's delivery OTP
       x-schema: RequestInput
       value: { awb: EE123456789IN, deliveryOtp: '4821' }
+    Handover:
+      summary: Handing over one of the member's two parcels after checking their ID card
+      x-schema: CompleteCollectionInput
+      value: { parcelIds: [6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d], idChecked: true }
 x-invalid-examples:
+  - schema: CompleteCollectionInput
+    value: { parcelIds: [], idChecked: false }
+  - schema: CompleteCollectionInput
+    value: { parcelIds: [p1] }
   - schema: RequestInput
     value: { orderId: OD123456789012 }
   - schema: RequestInput
