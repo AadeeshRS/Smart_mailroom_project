@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 
 const DAY = 86_400_000;
 
-/** Delete rows nothing reads any more, so these tables don't grow forever (F15), and expire old requests. */
+/** Delete rows nothing reads any more, so these tables don't grow forever (F15), and expire old requests and codes. */
 export async function cleanup(db: PrismaClient, now: Date) {
   const dayAgo = new Date(+now - DAY);
   await db.session.deleteMany({ where: { OR: [{ expiresAt: { lte: now } }, { revokedAt: { not: null } }] } });
@@ -11,6 +11,10 @@ export async function cleanup(db: PrismaClient, now: Date) {
   await db.parcelRequest.updateMany({
     where: { status: 'OPEN', expiresAt: { lte: now } },
     data: { status: 'EXPIRED', deliveryOtp: null },
+  });
+  await db.collection.updateMany({
+    where: { status: { in: ['PENDING', 'VERIFIED'] }, expiresAt: { lte: now } },
+    data: { status: 'EXPIRED' },
   });
   // A self-registration that was never verified frees its phone and ID number after a day.
   await db.user.deleteMany({ where: { role: 'MEMBER', emailVerifiedAt: null, createdAt: { lte: dayAgo } } });

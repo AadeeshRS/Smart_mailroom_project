@@ -14,6 +14,8 @@ export type Config = {
   rates: { loginPerIp: number; codesPerIp: number; codeChecksPerIp: number };
   /** Open member requests expire after this many days. */
   requestExpiryDays: number;
+  /** A Collect now code is valid for this many minutes. */
+  collectionCodeMinutes: number;
 };
 
 const count = (value: string | undefined, fallback: number, name: string) => {
@@ -58,6 +60,7 @@ export function config(env = process.env): Config {
       codeChecksPerIp: count(env.RATE_CODE_CHECKS_PER_IP, 300, 'RATE_CODE_CHECKS_PER_IP'),
     },
     requestExpiryDays: count(env.REQUEST_EXPIRY_DAYS, 30, 'REQUEST_EXPIRY_DAYS'),
+    collectionCodeMinutes: count(env.COLLECTION_CODE_MINUTES, 15, 'COLLECTION_CODE_MINUTES'),
   };
   if (environment === 'production') {
     const missing = ['RESEND_API_KEY', 'MAIL_FROM', 'ALLOWED_EMAIL_DOMAINS'].filter(name => !env[name]?.trim());

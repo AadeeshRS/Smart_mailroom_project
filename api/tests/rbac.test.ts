@@ -39,6 +39,11 @@ const EXPECTED: Record<Operation, Permission> = {
   createRequest: 'MEMBER',
   updateRequest: 'MEMBER',
   cancelRequest: 'MEMBER',
+  collectNow: 'MEMBER',
+  cancelCollection: 'MEMBER',
+  listCollections: 'OPERATOR',
+  verifyCollection: 'OPERATOR',
+  completeCollection: 'OPERATOR',
 };
 
 /** Who may call each permission level, independent of src/core/rbac.ts. */

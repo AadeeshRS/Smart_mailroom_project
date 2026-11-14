@@ -48,6 +48,7 @@ enum RequestStatus {
 
 enum CollectionStatus {
   PENDING
+  VERIFIED
   COMPLETED
   CANCELLED
   EXPIRED
@@ -172,7 +173,6 @@ model Parcel {
   lastRemindedAt DateTime?
 
   requests      ParcelRequest[]
-  collections   Collection[]
   notifications Notification[]
   audits        AuditEvent[]
 
@@ -204,10 +204,9 @@ model ParcelRequest {
   @@index([orderId])
 }
 
+/// One Collect now code; it covers all the member's parcels waiting in the mailroom.
 model Collection {
   id          String           @id
-  parcelId    String
-  parcel      Parcel           @relation(fields: [parcelId], references: [id])
   userId      String
   user        User             @relation("Collector", fields: [userId], references: [id])
   otpDigest   String

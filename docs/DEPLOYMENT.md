@@ -37,6 +37,7 @@ Brevo** (that means a new sender in `api/src/modules/notifications/email.ts`).
 | `RATE_CODES_PER_IP` | no | Default 150 per 15 minutes (register, resend, forgot password) |
 | `RATE_CODE_CHECKS_PER_IP` | no | Default 300 per 15 minutes |
 | `REQUEST_EXPIRY_DAYS` | no | Default 30: open member requests expire, and their delivery OTP is cleared |
+| `COLLECTION_CODE_MINUTES` | no | Default 15: how long a Collect now code is valid |
 | `CONTRACT_PATH` | no | Only if `contracts/openapi.yaml` isn't shipped; by default the API finds it above its folder |
 
 The per-IP limits are loose because the campus shares one public IP, and every attempt counts toward them,
