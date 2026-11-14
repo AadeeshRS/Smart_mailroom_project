@@ -420,6 +420,7 @@ Sizes: **S** < 1 day · **M** 1-3 days · **L** 3+ days.
 | 5.2 Notifications for collection-requested (to operators: optional push) and collected (to the member) | |
 | 5.3 Mobile member Collect now sheet (large OTP, countdown, regenerate) and `history.tsx` | |
 | 5.4 Mobile `(operator)/giveaway.tsx` plus the polling pop-up in the operator layout. The verification panel shows the member's name, ID, hostel and room **next to the label name**, then hand over | End-to-end browser test: register → intake → Collect now → operator completes → the parcel shows in history |
+| 5.5 **Name check (user rule).** Phone and personal email aren't verified but drive auto-linking, so the giveaway check is the real safeguard. If the label name is empty or shares no word with the member's name (case-insensitive), the panel shows a warning and the operator must tap **Checked ID card** before completing. The API enforces it: `complete` takes `idChecked`, refuses a mismatch without it, and records it in the audit entry | Test: a mismatch without `idChecked` is refused; with it, the handover completes and the audit entry says the ID card was checked |
 
 ### Phase 6: Push notifications (M) for W7
 
@@ -481,5 +482,5 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 | The hostel list | Phase 2 (or added later in the admin screen) |
 | The first admin's email | Phase 2 (`create-admin`) |
 | An Expo account and EAS project; Firebase project for Android push (FCM) | Phase 6 |
-| Thresholds: reminder after N days (default 3), "sitting too long" after N days (default 7), request expiry (default 30) | Phase 6-7 |
+| Thresholds: **decided**, the defaults as environment variables: `REQUEST_EXPIRY_DAYS` 30, `REMINDER_AFTER_DAYS` 3, `WAITING_TOO_LONG_DAYS` 7. The mailroom's return policy is still to be confirmed | Phase 4-7 |
 | App name, icon and bundle ID | Phase 8 |
