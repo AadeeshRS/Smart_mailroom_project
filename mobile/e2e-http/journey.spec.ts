@@ -134,6 +134,11 @@ test('an operator logs a parcel from its label and the member with that phone se
   await signIn(page, 'member@college.example');
   await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
   await expect(page.getByText(/^India Post · arrived/)).toBeVisible();
+  // The arrival notification is on Home too (no push on the web, or on Android in Expo Go); Mark as read clears it.
+  const arrival = page.getByText('Your parcel is at the mailroom', { exact: true });
+  await expect(arrival).toBeVisible();
+  await page.getByRole('button', { name: 'Mark as read', exact: true }).click();
+  await expect(arrival).toBeHidden();
 });
 
 test('a member requests a parcel with a delivery OTP; the operator sees it when scanning and it links', async ({

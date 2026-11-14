@@ -1,6 +1,8 @@
 import { RoleTabs } from '../../src/navigation';
+import { usePushNotifications } from '../../src/push';
 
 export default function Layout() {
+  usePushNotifications();
   return (
     <RoleTabs
       role="MEMBER"

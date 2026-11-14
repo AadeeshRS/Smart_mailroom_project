@@ -1,16 +1,24 @@
 import { useState } from 'react';
+import { View } from 'react-native';
 import type { Schema } from '../../api/service';
 import { useAction, useResource } from '../../hooks';
 import { carrierName, parcelCode } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
-import { Button, Card, Empty, Feedback, Heading, Muted, Page, ResourceState, date } from '../../ui';
+import { Body, Button, Card, Empty, Feedback, Heading, Muted, Page, ResourceState, date } from '../../ui';
 import { CollectSheet } from './CollectSheet';
 
-/** Parcels waiting for the member at the mailroom. */
+/** Parcels waiting for the member at the mailroom, and notifications they haven't read (Android in Expo Go gets
+ * no pushes, so this is where those members see them). */
 export function MemberHome() {
   const { api, user } = useSession();
   const ready = useResource(() => api.listMyParcels({ view: 'ready' }));
   const items = ready.data?.items ?? [];
+  const inbox = useResource(() => api.listNotifications({}));
+  const unread = inbox.data?.items.filter(n => !n.read) ?? [];
+  const read = useAction();
+  async function markRead() {
+    if (await read.run(() => api.markNotificationsRead({}))) inbox.retry();
+  }
   const [code, setCode] = useState<Schema<'MyCollection'>>();
   const collect = useAction();
   async function collectNow() {
@@ -27,6 +35,19 @@ export function MemberHome() {
   return (
     <Page title={`Hello, ${user?.name.split(' ')[0] ?? ''}`} subtitle="Parcels waiting for you at the mailroom.">
       <ResourceState loading={ready.loading && !ready.data} error={ready.error} retry={ready.retry} />
+      {!!unread.length && (
+        <Card>
+          <Heading>New for you</Heading>
+          {unread.map(n => (
+            <View key={n.id}>
+              <Body>{n.title}</Body>
+              <Muted>{`${n.body} · ${date(n.createdAt)}`}</Muted>
+            </View>
+          ))}
+          <Feedback error={read.error} />
+          <Button label="Mark as read" variant="quiet" onPress={markRead} busy={read.busy} />
+        </Card>
+      )}
       {!!ready.data && !items.length && (
         <Empty
           title="Nothing waiting"
