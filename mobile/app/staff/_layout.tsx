@@ -1,2 +1,4 @@
 import { RoleTabs } from '../../src/screens/navigation';
-export default function Layout() { return <RoleTabs role="STAFF" />; }
+export default function Layout() {
+  return <RoleTabs role="STAFF" />;
+}

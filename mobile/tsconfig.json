@@ -3,16 +3,9 @@
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
-    "types": [
-      "vitest/globals",
-      "node"
-    ],
+    "types": ["vitest/globals", "node"],
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "../contracts/generated/*.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", "../contracts/generated/*.d.ts"]
 }

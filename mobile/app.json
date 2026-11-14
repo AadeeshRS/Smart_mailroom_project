@@ -9,6 +9,16 @@
     "ios": { "supportsTablet": true, "bundleIdentifier": "edu.demo.smartmailroom" },
     "android": { "package": "edu.demo.smartmailroom" },
     "web": { "bundler": "metro", "output": "single", "name": "Smart Mailroom Demo" },
-    "plugins": ["expo-router", ["expo-camera", { "cameraPermission": "Allow Smart Mailroom to scan parcel labels and collection QR codes.", "recordAudioAndroid": false, "barcodeScannerEnabled": true }]]
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Smart Mailroom to scan parcel labels and collection QR codes.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ]
+    ]
   }
 }

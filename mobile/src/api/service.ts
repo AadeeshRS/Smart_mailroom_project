@@ -3,12 +3,20 @@ import type { components, operations } from '../../../contracts/generated/api';
 export type Schema<K extends keyof components['schemas']> = components['schemas'][K];
 type Json<T> = T extends { content: { 'application/json': infer V } } ? V : Record<never, never>;
 type Params<T, K extends string> = T extends { parameters: infer P }
-  ? K extends keyof P ? NonNullable<P[K]> extends never ? Record<never, never> : NonNullable<P[K]> : Record<never, never>
+  ? K extends keyof P
+    ? NonNullable<P[K]> extends never
+      ? Record<never, never>
+      : NonNullable<P[K]>
+    : Record<never, never>
   : Record<never, never>;
-export type Input<K extends keyof operations> =
-  (operations[K] extends { requestBody: infer B } ? Json<B> : Record<never, never>) &
-  Params<operations[K], 'path'> & Params<operations[K], 'query'>;
-export type Output<K extends keyof operations> = operations[K] extends { responses: { 200: infer R } } ? Json<R> : never;
+export type Input<K extends keyof operations> = (operations[K] extends { requestBody: infer B }
+  ? Json<B>
+  : Record<never, never>) &
+  Params<operations[K], 'path'> &
+  Params<operations[K], 'query'>;
+export type Output<K extends keyof operations> = operations[K] extends { responses: { 200: infer R } }
+  ? Json<R>
+  : never;
 /** Both HTTP and mock adapters implement this generated-operation interface.
  * Authentication context belongs to the adapter, never a caller-supplied role/student ID.
  */
@@ -16,7 +24,12 @@ export type MailroomService = { [K in keyof operations]: (input: Input<K>) => Pr
 
 export class ServiceError extends Error {
   readonly envelope: Schema<'ErrorEnvelope'>;
-  constructor(readonly code: Schema<'ErrorCode'>, message: string, readonly retryable = false, requestId = 'demo-local') {
+  constructor(
+    readonly code: Schema<'ErrorCode'>,
+    message: string,
+    readonly retryable = false,
+    requestId = 'demo-local',
+  ) {
     super(message);
     this.name = 'ServiceError';
     this.envelope = { error: { code, message, retryable, requestId } };
