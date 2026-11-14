@@ -21,9 +21,10 @@
    only with `npx expo install`, and only ones Expo Go includes. `mobile/tests/expo-go.test.ts` (run in CI) fails if
    a dependency is in neither `expo/bundledNativeModules.json` nor its short allowlist of JS-only packages. What
    Expo Go can't do (push on Android) is skipped there quietly and waits for the release builds in Phase 8.
-9. **Before every push,** run every check in one chain that stops at the first failure (`&&` in PowerShell 7 or
-   bash, or test `$LASTEXITCODE`): contracts, API tests and format, mobile typecheck, lint, tests and format, and
-   both browser suites whenever API or mobile behaviour changed. Never push with a failing check.
+9. **Before every push,** run `pwsh scripts/check.ps1` from the repo root. It runs every check in one chain and
+   stops at the first failure: contracts, API typecheck, tests and format, mobile typecheck, lint, tests and
+   format, then a web export and both browser suites. `-SkipBrowser` leaves the browser suites out, and is only
+   for changes with no API or mobile behaviour. Never push with a failing check.
 
 ## 1. Decisions (locked with the user)
 
@@ -346,11 +347,11 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 
 ### 4.11 Shared database and hosting
 
-- **Database:** online Postgres 17 from Neon or Supabase. **Name the database `smart_mailroom_dev`**; the existing seed guard (`api/src/config.ts` `dedicatedDataset`) then works with no code change while the demo login still exists in Phase 1.
-- **Connection strings:** set `DATABASE_URL` to the pooled URL with `sslmode=require` for the running API. Add `DIRECT_DATABASE_URL`, the non-pooled URL, which Prisma migrations use (`api/prisma.config.ts`).
-- **API:** a Render web service on the Free plan, built from `api/`. Build: `npm ci --include=dev && npm run generate && npm run build`. Start: `npm run migrate && npm start` (the Free plan has no pre-deploy step; `migrate deploy` does nothing when the schema is current). Health check: `/readyz`. Environment: `DATABASE_URL`, `DIRECT_DATABASE_URL`, `CREDENTIAL_PEPPER`, `NODE_ENV`, `HOST=0.0.0.0`, `PORT`, `TRUST_PROXY=1`, `CORS_ORIGINS`, `CONTRACT_PATH` (or ship `contracts/` in the build), and from Phase 2 `RESEND_API_KEY`, `MAIL_FROM` and `ALLOWED_EMAIL_DOMAINS`.
+- **Database:** Neon, Postgres 17, database `smart_mailroom_dev` (`docs/DEPLOYMENT.md` has the project details).
+- **Connection string:** one **direct (non-pooled)** `DATABASE_URL` with `sslmode=require`, used by both the running API and its migrations; one API instance with a 12-connection pool doesn't need Neon's pooler. It lives only in Render's environment and in the git-ignored `api/.env.neon` on the laptop that set the database up.
+- **API:** a Render web service on the Free plan, built from `api/`. Build: `npm ci --include=dev && npm run generate && npm run build`. Start: `npm run migrate && npm start` (the Free plan has no pre-deploy step; `migrate deploy` does nothing when the schema is current). Health check: `/readyz`. The environment variables are listed in `docs/DEPLOYMENT.md`.
 - **Mobile:** `EXPO_PUBLIC_API_BASE_URL=https://<service>/v1`. That works on any network with no LAN setup.
-- **Migrations run only from the deployment**, never from a developer's machine against the shared database. Developers use a local database for development and always for tests.
+- **Migrations run from the deployment:** Render's start command applies them. The only steps a laptop runs against Neon are `prisma migrate status` / `migrate deploy` the guarded way in `docs/DEPLOYMENT.md` (the URL from `api/.env.neon` only, never `api/.env`), and `npm run create-admin:neon`, which refuses any host not ending in `neon.tech`. Never `migrate reset`, `db push`, the seed, the API tests or the browser suites. Developers use a local database for development and always for tests.
 - Render's Free plan sleeps after 15 minutes idle (the first request then takes about a minute), and the background worker runs only while it's awake. It has no Shell, so the first admin is created from a laptop with `npm run create-admin:neon` (`docs/DEPLOYMENT.md`).
 
 ## 5. Security controls specific to this workflow
@@ -383,7 +384,7 @@ Sizes: **S** < 1 day · **M** 1-3 days · **L** 3+ days.
 
 | Task | Acceptance |
 |---|---|
-| 1.1 Add `DIRECT_DATABASE_URL` to `prisma.config.ts` for migrations, falling back to `DATABASE_URL`. Confirm SSL connections work (`sslmode=require` is passed through to `pg`) | `npm run migrate` succeeds against the online database |
+| 1.1 Confirm SSL connections work (`sslmode=require` is passed through to `pg`). No `DIRECT_DATABASE_URL`: one direct `DATABASE_URL` serves the API and migrations (§4.11) | `npm run migrate` succeeds against the online database |
 | 1.2 Add `GET /healthz` and `/readyz`; add `TRUST_PROXY`; turn on the Fastify logger with redaction of the authorization header and secret fields; log unexpected errors with their requestId | `/readyz` is 200, or 503 with the database down; one log line per error |
 | 1.3 Set the contract path explicitly (`CONTRACT_PATH`, or copy `contracts/openapi.yaml` into the build) so the API doesn't depend on its working directory | The API starts from any directory |
 | 1.4 Deploy to Render or Railway as described in 4.11. For **this phase only**, the staging service runs `NODE_ENV=development` and `DEMO_ENABLED=true`, and is seeded once with `npm run seed` | Teammates' phones log in through `https://…/v1` and see the same data |
@@ -483,7 +484,7 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 
 | Item | Needed by |
 |---|---|
-| Online Postgres connection URLs (pooled and direct), with the database named `smart_mailroom_dev` | Phase 1 |
+| An online Postgres database named `smart_mailroom_dev`, and its direct connection URL (done: Neon, `api/.env.neon`) | Phase 1 |
 | A Render or Railway account connected to the GitHub repo | Phase 1 |
 | College email domain(s) for `ALLOWED_EMAIL_DOMAINS` | Phase 2 |
 | A Resend account and API key, plus a sender address (a verified domain, or Resend's test sender for development) | Phase 2 |
