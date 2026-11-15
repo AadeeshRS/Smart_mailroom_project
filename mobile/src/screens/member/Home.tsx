@@ -34,6 +34,19 @@ export function MemberHome() {
       setCode(value => (value?.id === current.id ? { ...value, expiresAt: current.expiresAt } : value));
     }
   }, [code, activeCode.data]);
+  // Close on the code's own countdown rather than waiting for the next server event (WS-10). A verified code gets a
+  // new expiry through activeCode above, which restarts this timer.
+  useEffect(() => {
+    if (!code) return;
+    const timer = setTimeout(
+      () => {
+        setCode(undefined);
+        setCodeNotice('Your code expired. Tap Collect now for a new one.');
+      },
+      Math.max(0, Date.parse(code.expiresAt) - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [code]);
   useEffect(() => {
     if (!ready.data) return;
     const waiting = ready.data.items;

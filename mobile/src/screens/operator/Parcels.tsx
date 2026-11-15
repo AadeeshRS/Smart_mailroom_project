@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Schema } from '../../api/service';
-import { useResource } from '../../hooks';
+import { useAction, useResource } from '../../hooks';
 import { useSession } from '../../session/SessionProvider';
 import { Button, Card, Choice, Empty, Field, Page, ResourceState } from '../../ui';
 import { ParcelCard } from './ParcelCard';
@@ -22,25 +22,26 @@ export function ParcelsScreen() {
     ...(filter === 'UNMATCHED' ? { unmatched: true } : {}),
   };
   const key = JSON.stringify(query);
-  const [paging, setPaging] = useState({ key, count: 1 });
-  const count = paging.key === key ? paging.count : 1;
-  // Refresh loaded pages together so later pages cannot retain stale rows or duplicate a moved row.
-  const first = useResource(async () => {
-    const items: Schema<'OperatorParcel'>[] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < count; page++) {
-      const result = await api.listParcels({ ...query, ...(cursor ? { cursor } : {}) });
-      items.push(...result.items);
-      cursor = result.nextCursor;
-      if (!cursor) break;
+  const [paging, setPaging] = useState({ key, size: 20 });
+  const size = paging.key === key ? paging.size : 20;
+  // One live request (WS-12): Load more grows it 20 rows at a time, up to the API's 100, so each refresh is a
+  // single read and new arrivals can't push a row into a gap between pages.
+  // ponytail: past 100 rows, later pages load on demand and don't refresh live; a search narrows the list.
+  const first = useResource(() => api.listParcels({ ...query, limit: size }), key);
+  const [more, setMore] = useState<{ key: string; items: Schema<'OperatorParcel'>[]; next?: string }>();
+  const extra = more?.key === key && size === 100 ? more : undefined;
+  const firstItems = first.data?.items ?? [];
+  const shown = new Set(firstItems.map(parcel => parcel.id));
+  const items = [...firstItems, ...(extra?.items.filter(parcel => !shown.has(parcel.id)) ?? [])];
+  const next = extra ? extra.next : first.data?.nextCursor;
+  const load = useAction();
+  async function loadMore() {
+    if (size < 100) {
+      setPaging({ key, size: Math.min(100, size + 20) });
+      return first.retry();
     }
-    return { items, nextCursor: cursor };
-  }, key);
-  const items = first.data?.items ?? [];
-  const next = first.data?.nextCursor;
-  function loadMore() {
-    setPaging({ key, count: count + 1 });
-    first.retry();
+    const page = await load.run(() => api.listParcels({ ...query, cursor: next }));
+    if (page) setMore({ key, items: [...(extra?.items ?? []), ...page.items], next: page.nextCursor });
   }
 
   return (
@@ -68,7 +69,9 @@ export function ParcelsScreen() {
       {items.map(parcel => (
         <ParcelCard key={parcel.id} parcel={parcel} onPress={() => setOpen(parcel.id)} />
       ))}
-      {!!next && <Button label="Load more" variant="quiet" onPress={loadMore} busy={first.loading} />}
+      {!!next && (
+        <Button label="Load more" variant="quiet" onPress={() => void loadMore()} busy={first.loading || load.busy} />
+      )}
       {!!open && (
         <ParcelSheet
           parcelId={open}

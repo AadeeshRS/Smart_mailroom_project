@@ -43,6 +43,9 @@ export function IntakeForm({
   const submitted = useRef<Draft | undefined>(undefined);
   const uncertain = !!submitted.current && !!save.error;
   const locked = save.busy || uncertain;
+  // After an interrupted save, Back still works, but asks first: the parcel may already be logged (WS-13).
+  const [leaving, setLeaving] = useState(false);
+  const back = () => (uncertain && !leaving ? setLeaving(true) : onCancel());
   const set = (field: keyof Draft) => (value: string) => {
     if (!locked) setDraft(current => ({ ...current, [field]: value }));
   };
@@ -63,7 +66,13 @@ export function IntakeForm({
   }
 
   return (
-    <Page title="Label details" subtitle={lookup.code} back={locked ? undefined : onCancel}>
+    <Page title="Label details" subtitle={lookup.code} back={save.busy ? undefined : back}>
+      {leaving && uncertain && (
+        <Notice>
+          This parcel may already be saved: the connection dropped after it was sent. Tap Back again to leave, then
+          search Parcels for this code before logging it again.
+        </Notice>
+      )}
       {uncertain && (
         <Notice>
           The connection was interrupted. Retry Save parcel with these original details to check whether it was
