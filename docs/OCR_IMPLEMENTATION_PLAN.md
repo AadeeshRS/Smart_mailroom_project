@@ -1,5 +1,7 @@
 # Parcel identifiers and assisted label reading
 
+> **Proposal for after v1. Not in v1:** plan decision L3 stands (no OCR), and the AWB stays required for requests.
+
 Date: 15 November 2026
 
 Status: Proposed plan only. No application implementation is included.
