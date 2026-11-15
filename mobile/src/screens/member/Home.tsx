@@ -17,7 +17,7 @@ export function MemberHome() {
   const unread = inbox.data?.items.filter(n => !n.read) ?? [];
   const read = useAction();
   async function markRead() {
-    if (await read.run(() => api.markNotificationsRead({}))) inbox.retry();
+    await read.run(() => api.markNotificationsRead({})); // the reply refreshes the open screens (api/http.ts)
   }
   const [code, setCode] = useState<Schema<'MyCollection'>>();
   const [codeNotice, setCodeNotice] = useState('');

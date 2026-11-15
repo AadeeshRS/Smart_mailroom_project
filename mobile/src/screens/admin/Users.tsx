@@ -21,7 +21,7 @@ export function AdminUsers({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <Page modal title="Users" back={onClose}>
-        <Invite onInvited={users.retry} />
+        <Invite />
         <Card>
           <Field
             label="Search users"
@@ -43,7 +43,7 @@ export function AdminUsers({ onClose }: { onClose: () => void }) {
         <ResourceState loading={users.loading && !users.data} error={users.error} retry={users.retry} />
         {!!users.data && !items.length && <Empty title="No users" detail="Nobody matches this search." />}
         {items.map(user => (
-          <UserCard key={user.id} user={user} onChanged={users.retry} />
+          <UserCard key={user.id} user={user} />
         ))}
         {!!users.data?.nextCursor && <Muted>Showing the first 100. Search to narrow it down.</Muted>}
       </Page>
@@ -51,7 +51,7 @@ export function AdminUsers({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Invite({ onInvited }: { onInvited: () => void }) {
+function Invite() {
   const { api } = useSession();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -64,7 +64,6 @@ function Invite({ onInvited }: { onInvited: () => void }) {
     setSent(user.email);
     setEmail('');
     setName('');
-    onInvited();
   }
   return (
     <Card>
@@ -90,12 +89,12 @@ function Invite({ onInvited }: { onInvited: () => void }) {
   );
 }
 
-function UserCard({ user, onChanged }: { user: Schema<'User'>; onChanged: () => void }) {
+function UserCard({ user }: { user: Schema<'User'> }) {
   const { api } = useSession();
   const change = useAction();
   const userId = user.id;
   async function update(body: { role?: Role; active?: boolean }) {
-    if (await change.run(() => api.updateUser({ userId, ...body }))) onChanged();
+    await change.run(() => api.updateUser({ userId, ...body }));
   }
   return (
     <Card>

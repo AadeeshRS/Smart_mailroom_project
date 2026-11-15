@@ -33,10 +33,6 @@ export function AdminDashboard() {
   const { api } = useSession();
   const stats = useResource(() => api.getStats({ dayStart: todayStart() }));
   const aging = useResource(() => api.listAging({}));
-  const refresh = () => {
-    stats.retry();
-    aging.retry();
-  };
   const [sheet, setSheet] = useState<'users' | 'hostels'>();
   const s = stats.data;
   const items = aging.data?.items ?? [];
@@ -67,7 +63,7 @@ export function AdminDashboard() {
       <ResourceState loading={aging.loading && !aging.data} error={aging.error} retry={aging.retry} />
       {!!aging.data && !items.length && <Empty title="Nothing waiting too long" detail="Every parcel is recent." />}
       {items.map(item => (
-        <Waiting key={item.parcel.id} item={item} onChanged={refresh} />
+        <Waiting key={item.parcel.id} item={item} />
       ))}
       {sheet === 'users' && <AdminUsers onClose={() => setSheet(undefined)} />}
       {sheet === 'hostels' && <AdminHostels onClose={() => setSheet(undefined)} />}
@@ -75,7 +71,8 @@ export function AdminDashboard() {
   );
 }
 
-function Waiting({ item, onChanged }: { item: Schema<'AgingList'>['items'][number]; onChanged: () => void }) {
+/** Its writes need no re-read here: a successful write refreshes the open screens (api/http.ts). */
+function Waiting({ item }: { item: Schema<'AgingList'>['items'][number] }) {
   const { api } = useSession();
   const action = useAction();
   const [confirm, setConfirm] = useState(false);
@@ -83,11 +80,11 @@ function Waiting({ item, onChanged }: { item: Schema<'AgingList'>['items'][numbe
   const parcelId = parcel.id;
   const member = parcel.recipient;
   async function remind() {
-    if (await action.run(() => api.remindParcel({ parcelId }))) onChanged();
+    await action.run(() => api.remindParcel({ parcelId }));
   }
   async function returnIt() {
     if (!confirm) return setConfirm(true);
-    if (await action.run(() => api.returnParcel({ parcelId }))) onChanged();
+    await action.run(() => api.returnParcel({ parcelId }));
   }
   return (
     <View style={{ gap: 8 }}>

@@ -12,10 +12,7 @@ export function AdminHostels({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const add = useAction();
   async function submit() {
-    if (await add.run(() => api.createHostel({ name: name.trim() }))) {
-      setName('');
-      hostels.retry();
-    }
+    if (await add.run(() => api.createHostel({ name: name.trim() }))) setName('');
   }
   const items = hostels.data?.items ?? [];
   return (
@@ -29,20 +26,20 @@ export function AdminHostels({ onClose }: { onClose: () => void }) {
         <ResourceState loading={hostels.loading && !hostels.data} error={hostels.error} retry={hostels.retry} />
         {!!hostels.data && !items.length && <Empty title="No hostels yet" detail="Add the first one above." />}
         {items.map(hostel => (
-          <HostelCard key={hostel.id + hostel.name} hostel={hostel} onChanged={hostels.retry} />
+          <HostelCard key={hostel.id + hostel.name} hostel={hostel} />
         ))}
       </Page>
     </Modal>
   );
 }
 
-function HostelCard({ hostel, onChanged }: { hostel: Schema<'Hostel'>; onChanged: () => void }) {
+function HostelCard({ hostel }: { hostel: Schema<'Hostel'> }) {
   const { api } = useSession();
   const [name, setName] = useState(hostel.name);
   const change = useAction();
   const hostelId = hostel.id;
   async function update(body: { name?: string; active?: boolean }) {
-    if (await change.run(() => api.updateHostel({ hostelId, ...body }))) onChanged();
+    await change.run(() => api.updateHostel({ hostelId, ...body }));
   }
   return (
     <Card>

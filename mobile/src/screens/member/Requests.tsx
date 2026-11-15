@@ -22,7 +22,6 @@ export function MemberRequests() {
     if (!request) return;
     setDraft(BLANK);
     setAdded(request);
-    list.retry();
   }
 
   const items = list.data?.items ?? [];
@@ -58,22 +57,23 @@ export function MemberRequests() {
       <ResourceState loading={list.loading && !list.data} error={list.error} retry={list.retry} />
       {!!list.data && !items.length && <Empty title="No requests" detail="Requests you add show up here." />}
       {items.map(request => (
-        <RequestCard key={request.id} request={request} onChanged={list.retry} />
+        <RequestCard key={request.id} request={request} />
       ))}
     </Page>
   );
 }
 
-function RequestCard({ request, onChanged }: { request: Schema<'MyRequest'>; onChanged: () => void }) {
+/** Its writes need no re-read here: a successful write refreshes the open screens (api/http.ts). */
+function RequestCard({ request }: { request: Schema<'MyRequest'> }) {
   const { api } = useSession();
   const [otp, setOtp] = useState(request.deliveryOtp ?? '');
   const change = useAction();
   const requestId = request.id;
   async function saveOtp() {
-    if (await change.run(() => api.updateRequest({ requestId, deliveryOtp: cleanOtp(otp) }))) onChanged();
+    await change.run(() => api.updateRequest({ requestId, deliveryOtp: cleanOtp(otp) }));
   }
   async function cancel() {
-    if (await change.run(() => api.cancelRequest({ requestId }))) onChanged();
+    await change.run(() => api.cancelRequest({ requestId }));
   }
   const open = request.status === 'OPEN';
   return (
