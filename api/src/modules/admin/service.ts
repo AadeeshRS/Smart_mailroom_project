@@ -83,6 +83,7 @@ export async function remind(input: Input<'remindParcel'>, ctx: Ctx) {
 /** The worker's automatic reminders: a linked parcel waiting `everyDays` days gets one, then another every
  * `everyDays` days. The update is conditional on lastRemindedAt, so a run racing the admin's button reminds once. */
 export async function remindWaiting(db: PrismaClient, now: Date, everyDays: number) {
+  const reminded: string[] = [];
   const due = new Date(+now - everyDays * DAY);
   const parcels = await db.parcel.findMany({
     where: {
@@ -100,8 +101,12 @@ export async function remindWaiting(db: PrismaClient, now: Date, everyDays: numb
         where: { id: parcel.id, ...waiting, recipientId: parcel.recipientId, lastRemindedAt: parcel.lastRemindedAt },
         data: { lastRemindedAt: now },
       });
-      if (count) await queue(tx, reminder(parcel, parcel.recipientId!));
+      if (count) {
+        await queue(tx, reminder(parcel, parcel.recipientId!));
+        reminded.push(parcel.recipientId!);
+      }
     });
+  return { users: reminded, staff: reminded.length > 0 };
 }
 
 /** Returned to the sender: a conditional update, so a parcel collected a moment ago can't be returned too. */

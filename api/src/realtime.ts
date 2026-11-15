@@ -8,11 +8,30 @@ import type { Config } from './core/config.js';
 import { allowed } from './core/rbac.js';
 import { authenticate } from './modules/auth/service.js';
 
-type Client = { socket: WebSocket; sessionId: string; userId: string; role: Role; alive: boolean };
-type Audience = { users?: Set<string>; all?: boolean };
-export type Realtime = { publish: (audience: Audience) => Promise<void> };
+type Client = {
+  socket: WebSocket;
+  sessionId: string;
+  userId: string;
+  role: Role;
+  /** The session's expiry when last read; re-read only once it has passed (sessions slide forward daily). */
+  expiresAt: number;
+  alive: boolean;
+};
+/** Who gets "changed": these users' sockets, every staff socket, or everyone; never the writer's own session,
+ * which refreshed itself after its HTTP reply. */
+export type Audience = { users?: Iterable<string>; staff?: boolean; all?: boolean; except?: string };
+export type Realtime = {
+  /** In memory only: no database query. */
+  publish: (audience: Audience) => void;
+  /** Re-read one user's live sessions after a write that can have ended them; close the ended ones with 4001. */
+  revalidate: (userId: string) => Promise<void>;
+  /** One heartbeat: ping everyone, drop sockets that missed the last ping, re-read sessions whose expiry passed. */
+  tick: () => Promise<void>;
+};
 
-/** Process-local hub: add shared pub/sub before running multiple API instances. */
+/** Process-local hub: add shared pub/sub before running multiple API instances. An idle socket costs no database
+ * query: publishing and pinging work from memory, and a session is re-read only when its expiry passes or a write
+ * (logout, password change or reset, deactivation, role change) can have ended it. */
 export async function realtime(app: FastifyInstance, db: PrismaClient, settings: Config, now: () => Date) {
   await app.register(websocket, { options: { maxPayload: 2048, perMessageDeflate: false } });
   const clients = new Set<Client>();
@@ -23,15 +42,15 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
     if (client.socket.bufferedAmount > 8192) return client.socket.close(1013, 'Reconnect to refresh');
     client.socket.send(JSON.stringify({ type }));
   };
-  async function validClients() {
-    if (!clients.size) return [];
+  async function recheck(targets: Client[]) {
+    if (!targets.length) return;
     const sessions = await db.session.findMany({
-      where: { id: { in: [...clients].map(client => client.sessionId) } },
+      where: { id: { in: targets.map(client => client.sessionId) } },
       include: { user: true },
     });
-    const sessionsById = new Map(sessions.map(session => [session.id, session]));
-    return [...clients].filter(client => {
-      const session = sessionsById.get(client.sessionId);
+    const byId = new Map(sessions.map(session => [session.id, session]));
+    for (const client of targets) {
+      const session = byId.get(client.sessionId);
       if (
         !session ||
         session.revokedAt ||
@@ -41,35 +60,41 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
       ) {
         clients.delete(client);
         client.socket.close(4001, 'Sign in again');
-        return false;
-      }
-      return true;
-    });
+      } else client.expiresAt = +session.expiresAt;
+    }
   }
+  let ticking = false;
   const hub: Realtime = {
-    publish: async audience => {
-      for (const client of await validClients())
-        if (audience.all || client.role !== 'MEMBER' || audience.users?.has(client.userId)) send(client, 'changed');
+    publish: audience => {
+      const users = new Set(audience.users ?? []);
+      for (const client of clients)
+        if (
+          client.sessionId !== audience.except &&
+          (audience.all || users.has(client.userId) || (audience.staff && client.role !== 'MEMBER'))
+        )
+          send(client, 'changed');
     },
-  };
-  let checking = false;
-  const heartbeat = setInterval(async () => {
-    if (checking) return;
-    checking = true;
-    try {
-      for (const client of await validClients()) {
+    revalidate: userId => recheck([...clients].filter(client => client.userId === userId)),
+    tick: async () => {
+      if (ticking) return;
+      ticking = true;
+      try {
+        await recheck([...clients].filter(client => client.expiresAt <= +now()));
+      } catch {
+        // The database is unreachable: skip this re-read and try again next tick, rather than drop everyone (WS-08).
+      } finally {
+        ticking = false;
+      }
+      for (const client of clients) {
         if (!client.alive) client.socket.terminate();
         else {
           client.alive = false;
           send(client, 'ping');
         }
       }
-    } catch {
-      clients.forEach(client => client.socket.close(1013, 'Reconnect later'));
-    } finally {
-      checking = false;
-    }
-  }, 20_000);
+    },
+  };
+  const heartbeat = setInterval(() => void hub.tick(), 20_000);
   heartbeat.unref();
   app.addHook('preClose', async () => {
     clearInterval(heartbeat);
@@ -131,7 +156,14 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
           return socket.close(4001, 'Sign in again');
         if ([...clients].filter(item => item.userId === found.user.id).length >= 5)
           return socket.close(1013, 'Too many connections');
-        client = { socket, sessionId: found.session.id, userId: found.user.id, role: found.user.role, alive: true };
+        client = {
+          socket,
+          sessionId: found.session.id,
+          userId: found.user.id,
+          role: found.user.role,
+          expiresAt: +found.session.expiresAt,
+          alive: true,
+        };
         pending.delete(socket);
         clients.add(client);
         authenticating = false;

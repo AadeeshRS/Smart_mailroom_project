@@ -18,14 +18,16 @@ import { handlers as parcels } from './modules/parcels/handlers.js';
 import { handlers as requests } from './modules/requests/handlers.js';
 import { handlers as users } from './modules/users/handlers.js';
 import { mailer, type Mailer } from './modules/notifications/email.js';
-import { changedAudience, realtime } from './realtime.js';
+import { changedAudience, realtime, type Audience, type Realtime } from './realtime.js';
+import { normalEmail } from './modules/auth/service.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
     ctx: Ctx;
   }
   interface FastifyInstance {
-    publishChanges: () => Promise<void>;
+    realtime: Realtime;
+    publishChanges: (audience: Audience) => void;
   }
 }
 
@@ -93,7 +95,8 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
     connectionTimeout: 10_000,
   });
   const updates = await realtime(app, db, config, now);
-  app.decorate('publishChanges', () => updates.publish({ all: true }));
+  app.decorate('realtime', updates);
+  app.decorate('publishChanges', (audience: Audience) => updates.publish(audience));
   await app.register(cors, {
     origin: config.origins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -198,9 +201,10 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
             error.code === 'CODE_INVALID'
           ) {
             try {
-              await updates.publish(
-                await changedAudience(db, operation.operationId, input, undefined, request.ctx.user?.id),
-              );
+              updates.publish({
+                ...(await changedAudience(db, operation.operationId, input, undefined, request.ctx.user?.id)),
+                staff: true,
+              });
             } catch {
               app.log.warn('Collection attempt live update unavailable');
             }
@@ -209,9 +213,25 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
         }
         if (operation.method !== 'GET') {
           try {
-            await updates.publish(
-              await changedAudience(db, operation.operationId, input, result, request.ctx.user?.id),
-            );
+            // A write that can have ended sessions re-reads just that user's sockets (no query for other writes).
+            const ended =
+              operation.operationId === 'logout' || operation.operationId === 'changePassword'
+                ? request.ctx.user?.id
+                : operation.operationId === 'updateUser'
+                  ? String((input as { userId: string }).userId)
+                  : operation.operationId === 'resetPassword'
+                    ? (
+                        await db.user.findUnique({
+                          where: { email: normalEmail(String((input as { email: string }).email)) },
+                          select: { id: true },
+                        })
+                      )?.id
+                    : undefined;
+            if (ended) await updates.revalidate(ended);
+            updates.publish({
+              ...(await changedAudience(db, operation.operationId, input, result, request.ctx.user?.id)),
+              staff: true,
+            });
           } catch {
             app.log.warn('Live update unavailable; clients will recover with a fresh read');
           }

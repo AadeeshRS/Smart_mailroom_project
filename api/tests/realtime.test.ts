@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import type { PrismaClient } from '@prisma/client';
 import { createApp } from '../src/app.js';
-import { app, clock, db, fails, mailer, ok, reset, settings, signIn } from './helpers.js';
+import { runJobs } from '../src/jobs/worker.js';
+import { app, clock, codeFor, db, fails, mailer, ok, reset, settings, signIn } from './helpers.js';
 import { contract } from '../src/contract.js';
 
 const sockets: WebSocket[] = [];
@@ -99,9 +100,9 @@ test('logout/revocation and expiry close live sessions; reconnect starts with a 
   assert.equal((await closed)[0], 4001);
   const expired = await signIn('MEMBER');
   const third = await connect(expired.token);
-  await db.session.updateMany({ where: { userId: expired.user.id }, data: { expiresAt: new Date(clock.now - 1) } });
   const expiredClose = once(third, 'close');
-  await app.publishChanges();
+  clock.now += 8 * 86_400_000; // past the 7-day session: the heartbeat re-reads it and closes the socket
+  await app.realtime.tick();
   assert.equal((await expiredClose)[0], 4001);
 });
 
@@ -166,4 +167,99 @@ test('the deadline stops when the authenticate frame arrives, so a slow session 
   } finally {
     await slow.close();
   }
+});
+
+test("password reset, deactivation, role change and logout each close just that user's sockets with 4001", async () => {
+  const admin = await signIn('ADMIN');
+  const bystander = await signIn('MEMBER');
+  const watching = await connect(bystander.token);
+  const cases: [string, (user: Awaited<ReturnType<typeof signIn>>) => Promise<unknown>][] = [
+    ['logout', user => ok('logout', {}, user.token)],
+    [
+      'password reset',
+      async user => {
+        await ok('forgotPassword', { email: user.user.email });
+        return ok('resetPassword', {
+          email: user.user.email,
+          code: codeFor(user.user.email),
+          password: 'another-pass-1',
+        });
+      },
+    ],
+    ['deactivation', user => ok('updateUser', { userId: user.user.id, active: false }, admin.token)],
+    ['role change', user => ok('updateUser', { userId: user.user.id, role: 'OPERATOR' }, admin.token)],
+  ];
+  for (const [name, end] of cases) {
+    const user = await signIn('MEMBER');
+    const socket = await connect(user.token);
+    const closed = once(socket, 'close');
+    await end(user);
+    assert.equal((await closed)[0], 4001, name);
+  }
+  assert.equal(watching.readyState, 1, 'other users stay connected');
+});
+
+test('an idle socket costs no database query: pings and publishes work from memory; an expiry that slid stays open', async () => {
+  const member = await signIn('MEMBER');
+  const touched: string[] = [];
+  const counted = new Proxy(db, {
+    get: (target, key) => {
+      if (typeof key === 'string' && !key.startsWith('$')) touched.push(key);
+      return Reflect.get(target, key);
+    },
+  });
+  const live = await createApp(counted as PrismaClient, settings, { now: () => new Date(clock.now), mailer });
+  try {
+    await live.ready();
+    const socket = await live.injectWS('/v1/realtime');
+    const frames: string[] = [];
+    socket.on('message', frame => frames.push(String(frame)));
+    socket.send(JSON.stringify({ type: 'authenticate', token: member.token }));
+    await new Promise(resolve => setTimeout(resolve, 200));
+    touched.length = 0;
+    await live.realtime.tick();
+    live.realtime.publish({ users: [member.user.id] });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.deepEqual(touched, [], 'no table was touched');
+    assert.deepEqual(frames, ['{"type":"ready"}', '{"type":"ping"}', '{"type":"changed"}']);
+    // The session slid forward (it was used over HTTP); passing the old expiry re-reads it and keeps the socket.
+    await db.session.updateMany({
+      where: { userId: member.user.id },
+      data: { expiresAt: new Date(clock.now + 14 * 86_400_000) },
+    });
+    clock.now += 8 * 86_400_000;
+    socket.send(JSON.stringify({ type: 'pong' }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await live.realtime.tick();
+    assert.deepEqual(touched, ['session'], 'only the one expired session was re-read');
+    assert.equal(socket.readyState, 1);
+    socket.terminate();
+  } finally {
+    await live.close();
+  }
+});
+
+test('the worker publishes only what it changed: an idle run sends nothing; an expired request reaches its member and staff', async () => {
+  const operator = await signIn('OPERATOR');
+  const member = await signIn('MEMBER');
+  const other = await signIn('MEMBER');
+  const frames = { operator: [] as string[], member: [] as string[], other: [] as string[] };
+  for (const [name, user] of [
+    ['operator', operator],
+    ['member', member],
+    ['other', other],
+  ] as const)
+    (await connect(user.token)).on('message', frame => frames[name].push(String(frame)));
+  assert.equal(await runJobs(db, settings, new Date(clock.now)), undefined, 'an idle run changes nothing');
+  await ok('createRequest', { awb: 'EE111222333IN' }, member.token);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  for (const list of Object.values(frames)) list.length = 0;
+  const audience = await runJobs(db, settings, new Date(clock.now + 31 * 86_400_000));
+  assert.deepEqual(
+    { users: [...(audience?.users ?? [])], staff: audience?.staff },
+    { users: [member.user.id], staff: true },
+  );
+  app.publishChanges(audience!);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(frames, { operator: ['{"type":"changed"}'], member: ['{"type":"changed"}'], other: [] });
 });
