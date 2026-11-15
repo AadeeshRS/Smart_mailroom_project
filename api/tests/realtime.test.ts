@@ -308,3 +308,20 @@ test("public writes tell nobody; personal writes reach only the actor's other se
   await ok('createRequest', { awb: 'EE999888777IN' }, member.token);
   assert.deepEqual(await settle(), { staff: 1, writer: 0, other: 1 }, 'a shared write');
 });
+
+test('an 11th unauthenticated socket from one IP is refused while other IPs still connect', async () => {
+  const member = await signIn('MEMBER');
+  await app.ready();
+  const from = (remoteAddress: string) =>
+    ({ socket: { remoteAddress } }) as unknown as Parameters<typeof app.injectWS>[1];
+  for (let n = 0; n < 10; n++) sockets.push(await app.injectWS('/v1/realtime', from('203.0.113.7')));
+  await assert.rejects(app.injectWS('/v1/realtime', from('203.0.113.7')), /429/);
+  const elsewhere = await app.injectWS('/v1/realtime', from('198.51.100.9'));
+  sockets.push(elsewhere);
+  const ready = once(elsewhere, 'message');
+  elsewhere.send(JSON.stringify({ type: 'authenticate', token: member.token }));
+  assert.deepEqual(JSON.parse(String((await ready)[0])), { type: 'ready' });
+  // Authenticating frees the slot: the same address can open a pending socket again.
+  const again = await app.injectWS('/v1/realtime', from('198.51.100.9'));
+  sockets.push(again);
+});

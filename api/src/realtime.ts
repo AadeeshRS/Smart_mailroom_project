@@ -36,6 +36,11 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
   await app.register(websocket, { options: { maxPayload: 2048, perMessageDeflate: false } });
   const clients = new Set<Client>();
   const pending = new Set<WebSocket>();
+  /** Unauthenticated sockets per client IP (WS-05): one address can't fill the 500 slots. Behind Render's proxy
+   * request.ip is the real client (TRUST_PROXY=1). ponytail: a campus behind one NAT shares these 10 during a mass
+   * reconnect; the client's backoff spreads the retries. */
+  const pendingByIp = new Map<string, number>();
+  const PENDING_PER_IP = 10;
   const validate = new Ajv({ strict: false }).compile(contract.components.schemas.RealtimeClientFrame as object);
   const send = (client: Client, type: S<'RealtimeServerFrame'>['type']) => {
     if (client.socket.readyState !== 1) return;
@@ -110,9 +115,23 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
         // No Origin check: React Native (Android) always sends Origin: http[s]://<API host>, and the session token
         // travels in the first frame, never a cookie, so another site can't use a socket without it.
         if (clients.size + pending.size >= 500) return reply.code(503).send({ error: 'Try again later' });
+        if ((pendingByIp.get(request.ip) ?? 0) >= PENDING_PER_IP)
+          return reply.code(429).send({ error: 'Too many connections from this address' });
       },
     },
     (socket, request) => {
+      // Checked again here: simultaneous upgrades from one address can all pass onRequest first.
+      const ip = request.ip;
+      if ((pendingByIp.get(ip) ?? 0) >= PENDING_PER_IP) return socket.terminate();
+      pendingByIp.set(ip, (pendingByIp.get(ip) ?? 0) + 1);
+      let counted = true;
+      const release = () => {
+        if (!counted) return;
+        counted = false;
+        const left = (pendingByIp.get(ip) ?? 1) - 1;
+        if (left) pendingByIp.set(ip, left);
+        else pendingByIp.delete(ip);
+      };
       pending.add(socket);
       let client: Client | undefined;
       let authenticating = false;
@@ -122,6 +141,7 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
       deadline.unref();
       socket.on('close', () => {
         clearTimeout(deadline);
+        release();
         pending.delete(socket);
         if (client) clients.delete(client);
       });
@@ -165,6 +185,7 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
           alive: true,
         };
         pending.delete(socket);
+        release();
         clients.add(client);
         authenticating = false;
         send(client, 'ready');
