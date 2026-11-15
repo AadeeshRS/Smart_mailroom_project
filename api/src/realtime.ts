@@ -91,7 +91,9 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
       pending.add(socket);
       let client: Client | undefined;
       let authenticating = false;
-      const deadline = setTimeout(() => socket.close(4001, 'Authentication required'), 5000);
+      // Only a missing first frame times out, never a slow session lookup (WS-02). terminate() frees the slot at
+      // once; the client sees 1006 and reconnects. 4001 is kept for a token the server actually rejected.
+      const deadline = setTimeout(() => socket.terminate(), 5000);
       deadline.unref();
       socket.on('close', () => {
         clearTimeout(deadline);
@@ -101,33 +103,39 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
       socket.on('error', () => socket.terminate());
       // Install synchronously so early frames are never lost during asynchronous authentication.
       socket.on('message', async (raw, binary) => {
+        let message: S<'RealtimeClientFrame'>;
         try {
           if (binary || authenticating) return socket.close(1008, 'Invalid frame');
           const frame: unknown = JSON.parse(raw.toString());
           if (!validate(frame)) return socket.close(1008, 'Invalid frame');
-          const message = frame as S<'RealtimeClientFrame'>;
-          if (client) {
-            if (message.type !== 'pong') return socket.close(1008, 'Invalid frame');
-            client.alive = true;
-            return;
-          }
-          if (message.type !== 'authenticate') return socket.close(4001, 'Authentication required');
-          authenticating = true;
-          const found = await authenticate({ db, config: settings, now: now(), ip: request.ip } as Ctx, message.token);
-          if (socket.readyState !== 1) return;
-          if (!found || !allowed(found.user.role, contract['x-realtime']['x-permission']))
-            return socket.close(4001, 'Sign in again');
-          if ([...clients].filter(item => item.userId === found.user.id).length >= 5)
-            return socket.close(1013, 'Too many connections');
-          client = { socket, sessionId: found.session.id, userId: found.user.id, role: found.user.role, alive: true };
-          clearTimeout(deadline);
-          pending.delete(socket);
-          clients.add(client);
-          authenticating = false;
-          send(client, 'ready');
+          message = frame as S<'RealtimeClientFrame'>;
         } catch {
-          socket.close(1008, 'Invalid frame');
+          return socket.close(1008, 'Invalid frame');
         }
+        if (client) {
+          if (message.type !== 'pong') return socket.close(1008, 'Invalid frame');
+          client.alive = true;
+          return;
+        }
+        if (message.type !== 'authenticate') return socket.close(1008, 'Authenticate first');
+        clearTimeout(deadline);
+        authenticating = true;
+        let found: Awaited<ReturnType<typeof authenticate>>;
+        try {
+          found = await authenticate({ db, config: settings, now: now(), ip: request.ip } as Ctx, message.token);
+        } catch {
+          return socket.close(1011, 'Try again'); // the database, not the token: reconnect
+        }
+        if (socket.readyState !== 1) return;
+        if (!found || !allowed(found.user.role, contract['x-realtime']['x-permission']))
+          return socket.close(4001, 'Sign in again');
+        if ([...clients].filter(item => item.userId === found.user.id).length >= 5)
+          return socket.close(1013, 'Too many connections');
+        client = { socket, sessionId: found.session.id, userId: found.user.id, role: found.user.role, alive: true };
+        pending.delete(socket);
+        clients.add(client);
+        authenticating = false;
+        send(client, 'ready');
       });
     },
   );

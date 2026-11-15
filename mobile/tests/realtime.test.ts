@@ -117,3 +117,28 @@ it('backs off failures, detects a silent connection, and stops after invalid aut
   live.setActive(true);
   expect(sockets).toHaveLength(count);
 });
+
+it('a timed-out or refused socket (1006, 1008, 1011, 1013) reconnects without signing out; only 4001 signs out', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  const unauthorized = vi.fn();
+  const sockets: FakeSocket[] = [];
+  const live = startRealtime('http://localhost/v1', 'token', unauthorized, () => {
+    const socket = new FakeSocket();
+    sockets.push(socket);
+    return socket;
+  });
+  stops.push(live.stop);
+  live.setActive(true);
+  // The server drops a socket whose authenticate frame came too late (1006), a malformed one (1008), a database
+  // failure during the lookup (1011) and an overload (1013): each is "reconnect", and the token is kept.
+  for (const code of [1006, 1008, 1011, 1013]) {
+    sockets.at(-1)!.onopen?.();
+    sockets.at(-1)!.onclose?.({ code });
+    await vi.advanceTimersByTimeAsync(31_000);
+  }
+  expect(unauthorized).not.toHaveBeenCalled();
+  expect(sockets).toHaveLength(5);
+  sockets.at(-1)!.onclose?.({ code: 4001 });
+  expect(unauthorized).toHaveBeenCalledTimes(1);
+});

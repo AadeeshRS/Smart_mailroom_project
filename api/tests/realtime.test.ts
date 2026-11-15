@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { app, clock, db, fails, ok, reset, signIn } from './helpers.js';
+import type { PrismaClient } from '@prisma/client';
+import { createApp } from '../src/app.js';
+import { app, clock, db, fails, mailer, ok, reset, settings, signIn } from './helpers.js';
 import { contract } from '../src/contract.js';
 
 const sockets: WebSocket[] = [];
@@ -124,4 +126,44 @@ test('failed OTP checks push their changed attempts and cancellation to the memb
   }
   assert.deepEqual(await ok('getMyCollection', {}, member.token), { collection: null });
   assert.deepEqual((await ok('listCollections', {}, operator.token)).items, []);
+});
+
+test('a socket that sends nothing for 5 s is dropped without 4001, and its token keeps working', async () => {
+  const member = await signIn('MEMBER');
+  const silent = await connect();
+  const started = Date.now();
+  const [code] = await once(silent, 'close');
+  assert.notEqual(code, 4001, 'a timeout must not tell the client to sign out');
+  assert.ok(Date.now() - started >= 4500, 'the deadline is about 5 s');
+  await connect(member.token); // the same token still reaches "ready"
+  await ok('getMe', {}, member.token);
+});
+
+test('the deadline stops when the authenticate frame arrives, so a slow session lookup still gets "ready"', async () => {
+  const member = await signIn('MEMBER');
+  // The same database, with session lookups delayed past the 5 s deadline (a waking Neon compute, say).
+  const slowSessions = new Proxy(db.session, {
+    get: (target, key) =>
+      key === 'findUnique'
+        ? async (...args: Parameters<typeof db.session.findUnique>) => {
+            await new Promise(resolve => setTimeout(resolve, 5500));
+            return target.findUnique(...args);
+          }
+        : Reflect.get(target, key),
+  });
+  const slowDb = new Proxy(db, { get: (target, key) => (key === 'session' ? slowSessions : Reflect.get(target, key)) });
+  const slow = await createApp(slowDb as PrismaClient, settings, { now: () => new Date(clock.now), mailer });
+  try {
+    await slow.ready();
+    const socket = await slow.injectWS('/v1/realtime');
+    const first = Promise.race([
+      once(socket, 'message').then(([frame]) => JSON.parse(String(frame))),
+      once(socket, 'close').then(([code]) => ({ closed: code })),
+    ]);
+    socket.send(JSON.stringify({ type: 'authenticate', token: member.token }));
+    assert.deepEqual(await first, { type: 'ready' });
+    socket.terminate();
+  } finally {
+    await slow.close();
+  }
 });
