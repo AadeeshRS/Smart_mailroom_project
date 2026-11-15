@@ -18,8 +18,7 @@ import { handlers as parcels } from './modules/parcels/handlers.js';
 import { handlers as requests } from './modules/requests/handlers.js';
 import { handlers as users } from './modules/users/handlers.js';
 import { mailer, type Mailer } from './modules/notifications/email.js';
-import { changedAudience, realtime, type Audience, type Realtime } from './realtime.js';
-import { normalEmail } from './modules/auth/service.js';
+import { afterWrite, realtime, type Audience, type Realtime } from './realtime.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -190,53 +189,27 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
           throw new DomainError('VALIDATION', 'This operation does not accept a request body.');
         const input = { ...(request.query as object), ...(request.params as object), ...(request.body as object) };
         const handler = handlers[operation.operationId] as (input: unknown, ctx: Ctx) => Promise<unknown>;
+        const live = (result: unknown, failed: boolean) =>
+          void afterWrite(updates, db, operation.operationId, input, result, request.ctx, failed).catch(() =>
+            app.log.warn('Live update unavailable; clients will recover with a fresh read'),
+          );
         let result: unknown;
         try {
           result = await handler(input, request.ctx);
         } catch (error) {
-          // An incorrect collection OTP spends an attempt and the fifth cancels the code.
+          // A wrong collection code spends an attempt (the fifth cancels the code): a change, though the call failed.
           if (
             operation.operationId === 'verifyCollection' &&
             error instanceof DomainError &&
             error.code === 'CODE_INVALID'
-          ) {
-            try {
-              updates.publish({
-                ...(await changedAudience(db, operation.operationId, input, undefined, request.ctx.user?.id)),
-                staff: true,
-              });
-            } catch {
-              app.log.warn('Collection attempt live update unavailable');
-            }
-          }
+          )
+            live(undefined, true);
           throw error;
         }
-        if (operation.method !== 'GET') {
-          try {
-            // A write that can have ended sessions re-reads just that user's sockets (no query for other writes).
-            const ended =
-              operation.operationId === 'logout' || operation.operationId === 'changePassword'
-                ? request.ctx.user?.id
-                : operation.operationId === 'updateUser'
-                  ? String((input as { userId: string }).userId)
-                  : operation.operationId === 'resetPassword'
-                    ? (
-                        await db.user.findUnique({
-                          where: { email: normalEmail(String((input as { email: string }).email)) },
-                          select: { id: true },
-                        })
-                      )?.id
-                    : undefined;
-            if (ended) await updates.revalidate(ended);
-            updates.publish({
-              ...(await changedAudience(db, operation.operationId, input, result, request.ctx.user?.id)),
-              staff: true,
-            });
-          } catch {
-            app.log.warn('Live update unavailable; clients will recover with a fresh read');
-          }
-        }
-        return reply.code(status).send(result);
+        reply.code(status).send(result);
+        // After the reply (WS-07): the caller never waits for the fan-out, and a failed fan-out can't fail the call.
+        if (operation.method !== 'GET') live(result, false);
+        return reply;
       },
     });
   }

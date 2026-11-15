@@ -5,8 +5,10 @@ import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import type { PrismaClient } from '@prisma/client';
 import { createApp } from '../src/app.js';
+import { operations } from '../src/app.js';
 import { runJobs } from '../src/jobs/worker.js';
-import { app, clock, codeFor, db, fails, mailer, ok, reset, settings, signIn } from './helpers.js';
+import { PERSONAL, SHARED } from '../src/realtime.js';
+import { PASSWORD, app, clock, codeFor, db, fails, mailer, ok, reset, settings, signIn } from './helpers.js';
 import { contract } from '../src/contract.js';
 
 const sockets: WebSocket[] = [];
@@ -59,9 +61,10 @@ test('any Origin is accepted, including the http://<API host> that React Native 
 
 test('post-commit invalidations reach the recipient and staff, never an unrelated member; failed writes emit nothing', async () => {
   const operator = await signIn('OPERATOR');
+  const colleague = await signIn('OPERATOR');
   const member = await signIn('MEMBER', { phone: '+919876543210' });
   const other = await signIn('MEMBER');
-  const staff = await connect(operator.token);
+  const staff = await connect(colleague.token);
   const mine = await connect(member.token);
   const unrelated = await connect(other.token);
   const unwanted: string[] = [];
@@ -262,4 +265,46 @@ test('the worker publishes only what it changed: an idle run sends nothing; an e
   app.publishChanges(audience!);
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.deepEqual(frames, { operator: ['{"type":"changed"}'], member: ['{"type":"changed"}'], other: [] });
+});
+
+test('every authenticated write is classified as shared (parcels, requests, collections, users, hostels) or personal', () => {
+  const writes = operations.filter(o => o.method !== 'GET' && o['x-permission'] !== 'PUBLIC').map(o => o.operationId);
+  assert.deepEqual(
+    writes.filter(op => SHARED.has(op) === PERSONAL.has(op)),
+    [],
+    'each write is in exactly one set',
+  );
+});
+
+test("public writes tell nobody; personal writes reach only the actor's other sessions; shared writes reach affected members and staff, never the writer's own session", async () => {
+  const operator = await signIn('OPERATOR');
+  const member = await signIn('MEMBER');
+  const phone = await ok('login', { email: member.user.email, password: PASSWORD }); // the member's other device
+  const seen = { staff: 0, writer: 0, other: 0 };
+  (await connect(operator.token)).on('message', () => seen.staff++);
+  (await connect(member.token)).on('message', () => seen.writer++);
+  (await connect(phone.token)).on('message', () => seen.other++);
+  const settle = async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const copy = { ...seen };
+    Object.assign(seen, { staff: 0, writer: 0, other: 0 });
+    return copy;
+  };
+  await ok('login', { email: member.user.email, password: PASSWORD });
+  await ok('forgotPassword', { email: member.user.email });
+  await ok('register', {
+    email: 'newcomer@college.example',
+    password: 'long-enough-1',
+    name: 'New Comer',
+    memberType: 'STUDENT',
+    idNumber: 'NEW1',
+    phone: '9000011111',
+    acceptPrivacyNotice: true,
+  });
+  assert.deepEqual(await settle(), { staff: 0, writer: 0, other: 0 }, 'public writes');
+  await ok('updateMe', { roomNumber: 'B-1' }, member.token);
+  await ok('markNotificationsRead', {}, member.token);
+  assert.deepEqual(await settle(), { staff: 0, writer: 0, other: 2 }, 'personal writes');
+  await ok('createRequest', { awb: 'EE999888777IN' }, member.token);
+  assert.deepEqual(await settle(), { staff: 1, writer: 0, other: 1 }, 'a shared write');
 });

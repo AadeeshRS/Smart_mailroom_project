@@ -6,7 +6,7 @@ import { Ajv } from 'ajv';
 import { contract, type Ctx, type Operation, type S } from './contract.js';
 import type { Config } from './core/config.js';
 import { allowed } from './core/rbac.js';
-import { authenticate } from './modules/auth/service.js';
+import { authenticate, normalEmail } from './modules/auth/service.js';
 
 type Client = {
   socket: WebSocket;
@@ -172,6 +172,64 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
     },
   );
   return hub;
+}
+
+/** Changes to parcels, requests, collections, users and hostels: the affected members and every staff socket hear
+ * about them. */
+export const SHARED = new Set<Operation>([
+  'intakeParcel',
+  'assignParcel',
+  'remindParcel',
+  'returnParcel',
+  'createRequest',
+  'updateRequest',
+  'cancelRequest',
+  'collectNow',
+  'cancelCollection',
+  'verifyCollection',
+  'completeCollection',
+  'createUser',
+  'updateUser',
+  'createHostel',
+  'updateHostel',
+]);
+/** The signed-in user's own business: at most their other sessions hear about it. */
+export const PERSONAL = new Set<Operation>([
+  'logout',
+  'updateMe',
+  'changePassword',
+  'markNotificationsRead',
+  'registerDevice',
+]);
+
+/** After a successful write (or a wrong collection code, which spends an attempt): re-check sessions it can have
+ * ended, then tell who needs to know. PUBLIC operations (sign-up, codes, login, password reset) tell nobody. The
+ * writer's own session is skipped unless the call failed: it refreshed itself when its reply arrived. */
+export async function afterWrite(
+  hub: Realtime,
+  db: PrismaClient,
+  operation: Operation,
+  input: Record<string, unknown>,
+  result: unknown,
+  ctx: Ctx,
+  failed = false,
+) {
+  const ended =
+    operation === 'logout' || operation === 'changePassword'
+      ? ctx.user?.id
+      : operation === 'updateUser'
+        ? String(input.userId)
+        : operation === 'resetPassword'
+          ? (await db.user.findUnique({ where: { email: normalEmail(String(input.email)) }, select: { id: true } }))?.id
+          : undefined;
+  if (ended) await hub.revalidate(ended);
+  if (!ctx.user || !ctx.session) return;
+  if (!SHARED.has(operation)) return hub.publish({ users: [ctx.user.id], except: ctx.session.id });
+  hub.publish({
+    ...(await changedAudience(db, operation, input, result, ctx.user.id)),
+    staff: true,
+    except: failed ? undefined : ctx.session.id,
+  });
 }
 
 /** Resolve members after commit. The pushed frame itself contains no identities or business data. */
