@@ -2,13 +2,18 @@ import { spawn } from 'node:child_process';
 import { config, dedicatedDataset } from '../src/core/config.js';
 import { database } from '../src/core/db.js';
 import { seed } from '../src/seed.js';
+import { truncateAll } from './truncate.js';
 
 // Development rendering catches React Native warnings stripped from web exports.
 const settings = config();
 dedicatedDataset(settings.databaseUrl);
 if (new URL(settings.databaseUrl).pathname !== '/smart_mailroom_test')
   throw Error('Development browser tests require the isolated test database.');
+if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(settings.databaseUrl).hostname))
+  throw Error('Development browser tests require a local database host.');
 const db = database(settings.databaseUrl);
+// The preceding HTTP suite uses the same fixture accounts. Do not inherit its login limits or parcels.
+await truncateAll(db);
 await seed(db, settings.databaseUrl, process.env.SEED_PASSWORD ?? '');
 await db.$disconnect();
 const child = spawn(

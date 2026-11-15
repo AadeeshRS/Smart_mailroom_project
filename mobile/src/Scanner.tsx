@@ -1,4 +1,5 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Modal, Platform, View } from 'react-native';
 import { Button, Card, Heading, Muted, Notice, Page } from './ui';
@@ -14,12 +15,15 @@ export function Scanner({
   onScan: (text: string) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
+  const focused = useIsFocused();
+  const visible = useRef(false);
+  visible.current = open && focused;
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState('');
   const [scanned, setScanned] = useState(false);
   const scanLock = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !focused) return;
     let active = true;
     setScanned(false);
     scanLock.current = false;
@@ -40,7 +44,7 @@ export function Scanner({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [open, focused]);
   async function ask() {
     try {
       const result = await requestPermission();
@@ -52,6 +56,7 @@ export function Scanner({
       setError('Camera permission could not be requested. Use manual entry.');
     }
   }
+  if (!open || !focused) return null; // Release the physical camera, rather than hiding an active preview.
   return (
     <Modal visible={open} animationType="slide" onRequestClose={onClose}>
       <Page
@@ -102,14 +107,15 @@ export function Scanner({
               barcodeScannerSettings={{
                 barcodeTypes: ['qr', 'code128', 'code39', 'ean13', 'ean8', 'pdf417', 'datamatrix', 'upc_a', 'upc_e'],
               }}
-              onMountError={() =>
-                setError('Camera preview failed. Return to manual entry or try another supported device.')
-              }
+              onMountError={() => {
+                setError('Camera preview failed. Return to manual entry or try another supported device.');
+                setAvailable(false);
+              }}
               onBarcodeScanned={
                 scanned
                   ? undefined
                   : result => {
-                      if (scanLock.current) return;
+                      if (!visible.current || scanLock.current) return;
                       scanLock.current = true;
                       setScanned(true);
                       onScan(result.data);

@@ -4,6 +4,8 @@ import YAML from 'yaml';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 const source = YAML.parse(await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8'));
+if (source['x-realtime']?.['x-permission'] !== 'AUTH' || source['x-realtime']?.path !== '/realtime')
+  throw new Error('The WebSocket companion channel must require AUTH at /realtime');
 await SwaggerParser.validate(structuredClone(source));
 const ids = Object.values(source.paths).flatMap(path => Object.values(path).map(op => op.operationId));
 if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Missing or duplicate operationId');

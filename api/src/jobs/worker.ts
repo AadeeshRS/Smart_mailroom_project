@@ -44,7 +44,7 @@ export async function pseudonymise(db: PrismaClient, now: Date, days: number) {
 
 /** One background loop per API process. ponytail: fine for one instance; run it in a separate service
  * (or take an advisory lock per run) before scaling the API out. */
-export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000) {
+export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000, changed?: () => Promise<void>) {
   let running = false;
   const timer = setInterval(async () => {
     if (running) return;
@@ -62,6 +62,11 @@ export function startWorker(db: PrismaClient, settings: Config, everyMs = 60_000
       } catch (error) {
         console.error('Worker job failed:', error);
       }
+    try {
+      await changed?.();
+    } catch {
+      console.error('Background live update unavailable');
+    }
     running = false;
   }, everyMs);
   timer.unref();

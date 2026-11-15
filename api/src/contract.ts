@@ -59,6 +59,7 @@ function contractPath() {
   throw new Error('contracts/openapi.yaml not found; set CONTRACT_PATH.');
 }
 export const contract = YAML.parse(readFileSync(contractPath(), 'utf8')) as {
+  'x-realtime': { path: string; 'x-permission': Permission };
   paths: Record<string, Record<string, ContractOperation>>;
   components: {
     parameters: Record<string, { name: string; in: string; required?: boolean; schema: unknown }>;

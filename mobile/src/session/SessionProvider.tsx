@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import { startRealtime } from '../realtime';
+import { watchResource } from '../refresh';
 import { createHttpService, normalizeBaseUrl } from '../api/http';
 import { ServiceError, errorText, type MailroomService, type Schema } from '../api/service';
 
 type User = Schema<'User'>;
-const { api, setToken } = createHttpService(normalizeBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL ?? ''));
+const baseUrl = normalizeBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL ?? '');
+const { api, setToken: setHttpToken } = createHttpService(baseUrl);
 
 // The token lives in the OS keychain/keystore; web has no SecureStore, so it uses browser storage.
 const KEY = 'smart-mailroom.token';
@@ -47,12 +50,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const [restoreError, setRestoreError] = useState('');
+  const [bearer, setBearer] = useState<string>();
+  const userId = user?.id;
+  const setToken = useCallback((value: string | undefined) => {
+    setHttpToken(value);
+    setBearer(value);
+  }, []);
 
   const forget = useCallback(async () => {
     setToken(undefined);
     setUser(null);
     await tokenStore.clear();
-  }, []);
+  }, [setToken]);
 
   const restore = useCallback(async () => {
     setReady(false);
@@ -69,11 +78,51 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setReady(true);
     }
-  }, [forget]);
+  }, [forget, setToken]);
 
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  useEffect(() => {
+    if (!ready || !userId || !bearer) return;
+    const live = startRealtime(baseUrl, bearer, () => void forget());
+    const isActive = () =>
+      Platform.OS === 'web'
+        ? document.visibilityState !== 'hidden'
+        : AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
+    const account = watchResource(
+      () => api.getMe({}),
+      updated =>
+        setUser(current =>
+          current?.id === updated.id && JSON.stringify(current) !== JSON.stringify(updated) ? updated : current,
+        ),
+      error => {
+        if (error instanceof ServiceError && error.code === 'UNAUTHENTICATED') void forget();
+      },
+      () => undefined,
+      isActive,
+    );
+    const foreground = () => {
+      live.setActive(isActive());
+      if (isActive()) account.refresh();
+    };
+    const subscription = AppState.addEventListener('change', foreground);
+    foreground();
+    if (Platform.OS === 'web') {
+      document.addEventListener('visibilitychange', foreground);
+      window.addEventListener('online', live.reconnect);
+    }
+    return () => {
+      subscription.remove();
+      account.stop();
+      live.stop();
+      if (Platform.OS === 'web') {
+        document.removeEventListener('visibilitychange', foreground);
+        window.removeEventListener('online', live.reconnect);
+      }
+    };
+  }, [ready, userId, bearer, forget]);
 
   const handleError = useCallback(
     (error: unknown) => {
@@ -95,8 +144,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setUser(session.user);
     },
     signOut: async () => {
-      await api.logout({}).catch(() => undefined);
+      // Dispatch with the old token, but don't strand the user on this account if the network is slow.
+      const revoked = api.logout({}).catch(() => undefined);
       await forget();
+      await revoked;
     },
     setUser,
     handleError,

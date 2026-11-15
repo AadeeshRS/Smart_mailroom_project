@@ -1,25 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAction } from '../hooks';
 import { useSession } from '../session/SessionProvider';
 import { Body, Button, Card, Feedback, Field, Heading, Muted, Notice, Page, human } from '../ui';
 import { PrivacyNotice } from './PrivacyNotice';
 import { ProfileFields } from './ProfileFields';
-import { changes, formFrom } from './profileForm';
+import { changes, formFrom, rebaseForm } from './profileForm';
 
 export function ProfileScreen() {
   const { api, user, setUser, signOut } = useSession();
   const member = user?.role === 'MEMBER';
   const [form, setForm] = useState(() => formFrom(user ?? undefined));
+  const baseline = useRef({ owner: user?.id, form: formFrom(user ?? undefined) });
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    const next = formFrom(user);
+    const previous = baseline.current;
+    baseline.current = { owner: user.id, form: next };
+    setForm(current => (previous.owner === user.id ? rebaseForm(current, previous.form, next) : next));
+  }, [user]);
   const save = useAction();
   if (!user) return null;
   const edits = changes(form, formFrom(user), member);
   async function submit() {
+    const original = form;
     setSaved(false);
     const updated = await save.run(() => api.updateMe(edits));
     if (!updated) return;
     setUser(updated);
-    setForm(formFrom(updated));
+    setForm(current => rebaseForm(current, original, formFrom(updated)));
     setSaved(true);
   }
   return (
@@ -41,7 +50,7 @@ export function ProfileScreen() {
           member={member}
         />
         <Feedback error={save.error} />
-        {!!saved && <Notice>Saved.</Notice>}
+        {!!saved && !Object.keys(edits).length && <Notice>Saved.</Notice>}
         <Button label="Save changes" onPress={submit} busy={save.busy} disabled={!Object.keys(edits).length} />
       </Card>
       <PasswordCard />

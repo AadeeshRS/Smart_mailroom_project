@@ -60,9 +60,10 @@ export function ScanScreen() {
   return (
     <Page title="Receive a parcel" subtitle="Scan the AWB or order-ID barcode, or type it.">
       <Card>
-        <Button label="Scan barcode" onPress={() => setScanning(true)} />
+        <Button label="Scan barcode" onPress={() => setScanning(true)} disabled={find.busy} />
         <Field
           label="AWB or order ID"
+          editable={!find.busy}
           value={code}
           onChangeText={setCode}
           autoCapitalize="characters"

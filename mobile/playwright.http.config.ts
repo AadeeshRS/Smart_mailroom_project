@@ -6,6 +6,8 @@ export default defineConfig({
   workers: 1,
   timeout: 240_000,
   use: {
+    launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+    permissions: ['camera'],
     baseURL: 'http://127.0.0.1:8082',
     ...devices['iPhone 13'],
     browserName: 'chromium',

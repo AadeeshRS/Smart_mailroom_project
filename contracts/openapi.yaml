@@ -12,6 +12,19 @@ info:
     Timestamps are UTC RFC 3339.
 servers:
   - url: /v1
+x-realtime:
+  path: /realtime
+  x-permission: AUTH
+  description: >-
+    WebSocket companion to REST. Authenticate in the first JSON frame within five seconds;
+    never send credentials in a URL. The server sends ready after validating the session,
+    changed for committed writes affecting this member (or staff), and ping every 20 seconds.
+    Reply with pong. Frames carry no parcel, contact or OTP data. Re-fetch authorized HTTP
+    resources on ready and changed; ready also recovers events missed while disconnected.
+    Expired/revoked sessions close with 4001, invalid protocol with 1008, overload with 1013.
+    Connections are process-local; use a shared event broker before scaling to multiple API instances.
+  clientFrame: { $ref: '#/components/schemas/RealtimeClientFrame' }
+  serverFrame: { $ref: '#/components/schemas/RealtimeServerFrame' }
 paths:
   /auth/register:
     post:
@@ -406,6 +419,22 @@ paths:
         '200': { $ref: '#/components/responses/Ok' }
         default: { $ref: '#/components/responses/Error' }
   /me/collection:
+    get:
+      operationId: getMyCollection
+      summary: Check the member's active collection without returning its secret code
+      x-permission: MEMBER
+      responses:
+        '200':
+          description: Current code identity and expiry, or null after replacement/cancellation/completion
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [collection]
+                properties:
+                  collection: { $ref: '#/components/schemas/MyCollectionState' }
+        default: { $ref: '#/components/responses/Error' }
     post:
       operationId: collectNow
       summary: 'Collect now: one code for all the member''s parcels waiting in the mailroom'
@@ -830,6 +859,25 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Hostel' } }
+    RealtimeClientFrame:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, token]
+          properties:
+            type: { type: string, enum: [authenticate] }
+            token: { type: string, minLength: 1, maxLength: 512 }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { type: string, enum: [pong] }
+    RealtimeServerFrame:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [ready, changed, ping] }
     Code60: { type: string, minLength: 1, maxLength: 60 }
     Carrier:
       type: string
@@ -1038,11 +1086,21 @@ components:
     MyCollection:
       type: object
       additionalProperties: false
-      required: [otp, expiresAt, parcels]
+      required: [id, otp, expiresAt, parcels]
       properties:
+        id: { $ref: '#/components/schemas/Id' }
         otp: { type: string, pattern: '^[0-9]{6}$' }
         expiresAt: { type: string, format: date-time }
         parcels: { type: array, items: { $ref: '#/components/schemas/MyParcel' } }
+    MyCollectionState:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [id, status, expiresAt]
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [PENDING, VERIFIED] }
+        expiresAt: { type: string, format: date-time }
     HandoverParcel:
       type: object
       additionalProperties: false
@@ -1203,6 +1261,21 @@ components:
             requestId: { type: string }
             retryable: { type: boolean }
   examples:
+    RealtimeAuthenticate:
+      x-schema: RealtimeClientFrame
+      value: { type: authenticate, token: example-session-token }
+    RealtimePong:
+      x-schema: RealtimeClientFrame
+      value: { type: pong }
+    RealtimeReady:
+      x-schema: RealtimeServerFrame
+      value: { type: ready }
+    RealtimeChanged:
+      x-schema: RealtimeServerFrame
+      value: { type: changed }
+    RealtimePing:
+      x-schema: RealtimeServerFrame
+      value: { type: ping }
     RegisterRequest:
       summary: A student registering
       x-schema: RegisterInput
@@ -1238,6 +1311,12 @@ components:
       x-schema: CompleteCollectionInput
       value: { parcelIds: [6f1c2b8e-3d4a-4f5b-9c7d-8e9f0a1b2c3d], idChecked: true }
 x-invalid-examples:
+  - schema: RealtimeClientFrame
+    value: { type: authenticate }
+  - schema: RealtimeClientFrame
+    value: { type: subscribe, userId: another-member }
+  - schema: RealtimeServerFrame
+    value: { type: changed, otp: '123456' }
   - schema: CompleteCollectionInput
     value: { parcelIds: [], idChecked: false }
   - schema: CompleteCollectionInput

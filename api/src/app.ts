@@ -18,10 +18,14 @@ import { handlers as parcels } from './modules/parcels/handlers.js';
 import { handlers as requests } from './modules/requests/handlers.js';
 import { handlers as users } from './modules/users/handlers.js';
 import { mailer, type Mailer } from './modules/notifications/email.js';
+import { changedAudience, realtime } from './realtime.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
     ctx: Ctx;
+  }
+  interface FastifyInstance {
+    publishChanges: () => Promise<void>;
   }
 }
 
@@ -88,6 +92,8 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
     requestTimeout: 20_000,
     connectionTimeout: 10_000,
   });
+  const updates = await realtime(app, db, config, now);
+  app.decorate('publishChanges', () => updates.publish({ all: true }));
   await app.register(cors, {
     origin: config.origins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -181,7 +187,36 @@ export async function createApp(db: PrismaClient, config: Config, options: AppOp
           throw new DomainError('VALIDATION', 'This operation does not accept a request body.');
         const input = { ...(request.query as object), ...(request.params as object), ...(request.body as object) };
         const handler = handlers[operation.operationId] as (input: unknown, ctx: Ctx) => Promise<unknown>;
-        return reply.code(status).send(await handler(input, request.ctx));
+        let result: unknown;
+        try {
+          result = await handler(input, request.ctx);
+        } catch (error) {
+          // An incorrect collection OTP spends an attempt and the fifth cancels the code.
+          if (
+            operation.operationId === 'verifyCollection' &&
+            error instanceof DomainError &&
+            error.code === 'CODE_INVALID'
+          ) {
+            try {
+              await updates.publish(
+                await changedAudience(db, operation.operationId, input, undefined, request.ctx.user?.id),
+              );
+            } catch {
+              app.log.warn('Collection attempt live update unavailable');
+            }
+          }
+          throw error;
+        }
+        if (operation.method !== 'GET') {
+          try {
+            await updates.publish(
+              await changedAudience(db, operation.operationId, input, result, request.ctx.user?.id),
+            );
+          } catch {
+            app.log.warn('Live update unavailable; clients will recover with a fresh read');
+          }
+        }
+        return reply.code(status).send(result);
       },
     });
   }

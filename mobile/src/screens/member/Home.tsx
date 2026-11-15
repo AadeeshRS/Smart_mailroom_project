@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import type { Schema } from '../../api/service';
 import { useAction, useResource } from '../../hooks';
 import { carrierName, parcelCode } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
-import { Body, Button, Card, Empty, Feedback, Heading, Muted, Page, ResourceState, date } from '../../ui';
+import { Body, Button, Card, Empty, Feedback, Heading, Muted, Notice, Page, ResourceState, date } from '../../ui';
 import { CollectSheet } from './CollectSheet';
 
 /** Parcels waiting for the member at the mailroom, and notifications they haven't read (Android in Expo Go gets
@@ -20,8 +20,33 @@ export function MemberHome() {
     if (await read.run(() => api.markNotificationsRead({}))) inbox.retry();
   }
   const [code, setCode] = useState<Schema<'MyCollection'>>();
+  const [codeNotice, setCodeNotice] = useState('');
+  const activeCode = useResource(() => api.getMyCollection({}), code?.id ?? '', !!code);
+  useEffect(() => {
+    if (!code || !activeCode.data) return;
+    const current = activeCode.data.collection;
+    if (!current || current.id !== code.id) {
+      setCode(undefined);
+      setCodeNotice(
+        'This collection code is no longer active. Tap Collect now for a current code if parcels are still waiting.',
+      );
+    } else if (current.expiresAt !== code.expiresAt) {
+      setCode(value => (value?.id === current.id ? { ...value, expiresAt: current.expiresAt } : value));
+    }
+  }, [code, activeCode.data]);
+  useEffect(() => {
+    if (!ready.data) return;
+    const waiting = ready.data.items;
+    setCode(current => {
+      if (!current) return current;
+      const previous = new Set(current.parcels.map(parcel => parcel.id));
+      if (waiting.length === previous.size && waiting.every(parcel => previous.has(parcel.id))) return current;
+      return waiting.length ? { ...current, parcels: waiting } : undefined;
+    });
+  }, [ready.data]);
   const collect = useAction();
   async function collectNow() {
+    setCodeNotice('');
     const result = await collect.run(() => api.collectNow({}));
     if (result) setCode(result);
   }
@@ -35,6 +60,8 @@ export function MemberHome() {
   return (
     <Page title={`Hello, ${user?.name.split(' ')[0] ?? ''}`} subtitle="Parcels waiting for you at the mailroom.">
       <ResourceState loading={ready.loading && !ready.data} error={ready.error} retry={ready.retry} />
+      {!!inbox.error && !ready.error && <ResourceState loading={false} error={inbox.error} retry={inbox.retry} />}
+      {!!codeNotice && !code && !!items.length && <Notice>{codeNotice}</Notice>}
       {!!unread.length && (
         <Card>
           <Heading>New for you</Heading>

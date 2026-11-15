@@ -179,6 +179,12 @@ export const routes = {
     "query": [],
     "body": false
   },
+  "getMyCollection": {
+    "method": "GET",
+    "path": "/me/collection",
+    "query": [],
+    "body": false
+  },
   "collectNow": {
     "method": "POST",
     "path": "/me/collection",

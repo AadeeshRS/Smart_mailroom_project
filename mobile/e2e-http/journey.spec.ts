@@ -15,14 +15,21 @@ async function apiCall(path: string, body: unknown, token?: string) {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
   });
-  return response.json();
+  const result = await response.json();
+  expect(response.ok, `${path}: ${result.error?.code ?? response.status}`).toBe(true);
+  return result;
 }
 /** The latest code the API's console email provider sent to this address. */
-async function emailedCode(email: string) {
+async function emailedCode(email: string, previous?: string) {
   let code = '';
   await expect
     .poll(async () => (code = await (await fetch(`http://127.0.0.1:3101/code?email=${email}`)).text()))
     .toMatch(/^\d{6}$/);
+  if (previous) {
+    await expect
+      .poll(async () => (code = await (await fetch(`http://127.0.0.1:3101/code?email=${email}`)).text()))
+      .not.toBe(previous);
+  }
   return code;
 }
 async function signIn(page: Page, email: string, password = PASSWORD) {
@@ -37,6 +44,67 @@ async function signOut(page: Page) {
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
 }
 
+test('visible screens update after external intake and handover without reload; drafts survive refresh', async ({
+  page,
+}) => {
+  let readyFrames = 0;
+  let reads = 0;
+  page.on('websocket', socket => {
+    socket.on('framereceived', frame => {
+      if (String(frame.payload) === '{"type":"ready"}') readyFrames++;
+    });
+  });
+  page.on('request', request => {
+    if (request.method() === 'GET' && request.url().includes('/v1/me/')) reads++;
+  });
+  const operator = await apiCall('/auth/login', { email: 'operator@college.example', password: PASSWORD });
+  const member = await apiCall('/auth/login', { email: 'member@college.example', password: PASSWORD });
+  const awb = `EE${String(Date.now()).slice(-9)}IN`;
+  await apiCall('/me/requests', { awb }, member.token);
+  await page.goto('/login');
+  await signIn(page, 'member@college.example');
+  await expect(page.getByRole('heading', { name: 'Hello, Test', exact: true })).toBeVisible();
+  await expect.poll(() => readyFrames).toBeGreaterThan(0);
+  await apiCall('/parcels', { id: randomUUID(), awb, shelf: 'LIVE', labelName: 'Test Member' }, operator.token);
+  await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('Your parcel is at the mailroom', { exact: true })).toBeVisible();
+
+  await page.getByRole('tab', { name: /Requests/ }).click();
+  await field(page, 'AWB / tracking number').fill('D12345679');
+  await expect(page.getByText('It’s at the mailroom. Collect it from Home.', { exact: true })).toBeVisible();
+  const before = reads;
+  await page.waitForTimeout(2200); // a healthy WebSocket must eliminate the old one-second reads
+  expect(reads).toBe(before);
+  await expect(field(page, 'AWB / tracking number')).toHaveValue('D12345679');
+  await expect(page.getByText('It’s at the mailroom. Collect it from Home.', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: /Home/ }).click();
+  const connectedBefore = readyFrames;
+  await fetch('http://127.0.0.1:3101/restart', { method: 'POST' });
+  await expect.poll(() => readyFrames, { timeout: 10_000 }).toBeGreaterThan(connectedBefore);
+  await expect(page.getByRole('heading', { name: awb, exact: true }).filter({ visible: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Collect now', exact: true }).click();
+  const otp = (await page.getByLabel(/^Your code /).textContent())!;
+  const queue = await (
+    await fetch(API + '/collections', { headers: { Authorization: `Bearer ${operator.token}` } })
+  ).json();
+  const collection = queue.items.find((item: { member: { id: string } }) => item.member.id === member.user.id);
+  await apiCall(`/collections/${collection.id}/verify`, { otp }, operator.token);
+  await apiCall(
+    `/collections/${collection.id}/complete`,
+    {
+      parcelIds: collection.parcels.map((parcel: { id: string }) => parcel.id),
+      idChecked: true,
+    },
+    operator.token,
+  );
+  await expect(page.getByLabel(/^Your code /)).toBeHidden({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: 'Nothing waiting', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Mark as read', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'New for you', exact: true })).toBeHidden();
+  await page.getByRole('tab', { name: /Past/ }).click();
+  await expect(page.getByRole('heading', { name: awb, exact: true })).toBeVisible();
+});
+
 test('a member registers, verifies their email, stays signed in across a reload and edits their profile', async ({
   page,
 }) => {
@@ -47,6 +115,7 @@ test('a member registers, verifies their email, stays signed in across a reload 
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Create an account', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Create your account', exact: true })).toBeVisible();
   await field(page, 'College email').fill(email);
   await field(page, 'Full name').fill('Asha Rao');
   await field(page, 'Password').fill('asha-password-1');
@@ -58,13 +127,14 @@ test('a member registers, verifies their email, stays signed in across a reload 
   await page.getByRole('checkbox', { name: 'I’ve read the privacy notice.', exact: true }).click();
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Check your email', exact: true })).toBeVisible();
+  const firstCode = await emailedCode(email);
 
   // Signing in before verifying is refused, with a way to get a new code.
   await page.getByRole('button', { name: '‹ Back', exact: true }).click();
   await signIn(page, email, 'asha-password-1');
   await expect(page.getByText(/Verify your email first/)).toBeVisible();
   await page.getByRole('button', { name: 'Send me a new code', exact: true }).click();
-  await field(page, 'Code').fill(await emailedCode(email));
+  await field(page, 'Code').fill(await emailedCode(email, firstCode));
   await page.getByRole('button', { name: 'Verify', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Hello, Asha', exact: true })).toBeVisible();

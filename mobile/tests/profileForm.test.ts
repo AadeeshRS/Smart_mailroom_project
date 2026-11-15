@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { NO_HOSTEL, changes, formFrom, registration } from '../src/screens/profileForm';
+import { NO_HOSTEL, changes, formFrom, rebaseForm, registration } from '../src/screens/profileForm';
 
 const user = {
   id: 'usr_1',
@@ -18,6 +18,16 @@ const user = {
   roomNumber: 'B-214',
   createdAt: '2026-11-14T00:00:00.000Z',
 } as const;
+
+it('merges another device’s profile updates while keeping local unsaved fields', () => {
+  const before = formFrom(user);
+  const draft = { ...before, roomNumber: 'UNSAVED' };
+  const remote = { ...before, altPhone: '+919999999999', roomNumber: 'REMOTE' };
+  const merged = rebaseForm(draft, before, remote);
+  expect(merged.altPhone).toBe('+919999999999');
+  expect(merged.roomNumber).toBe('UNSAVED');
+  expect(changes(merged, remote, true)).toEqual({ roomNumber: 'UNSAVED' });
+});
 
 it('sends only changed fields; clearing an optional field sends null', () => {
   const before = formFrom(user);

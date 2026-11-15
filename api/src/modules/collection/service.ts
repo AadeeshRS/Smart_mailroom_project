@@ -72,6 +72,18 @@ function ready(c: Collection, ctx: Ctx, step: 'PENDING' | 'VERIFIED') {
 }
 
 /** Collect now: one code for all the member's waiting parcels, replacing their open code. */
+export async function current(_input: Input<'getMyCollection'>, ctx: Ctx) {
+  const row = await ctx.db.collection.findFirst({
+    where: { userId: signedIn(ctx).user.id, status: OPEN, expiresAt: { gt: ctx.now } },
+    select: { id: true, status: true, expiresAt: true },
+  });
+  return {
+    collection: row
+      ? { id: row.id, status: row.status as 'PENDING' | 'VERIFIED', expiresAt: row.expiresAt.toISOString() }
+      : null,
+  };
+}
+
 export async function collectNow(_input: Input<'collectNow'>, ctx: Ctx) {
   const { user } = signedIn(ctx);
   await limit(ctx.db, `collect:${user.id}`, 6, ctx.now, MINUTE);
@@ -94,7 +106,7 @@ export async function collectNow(_input: Input<'collectNow'>, ctx: Ctx) {
       },
     });
   });
-  return { otp: code, expiresAt: expiresAt.toISOString(), parcels: parcels.map(toMyParcel) };
+  return { id: collectionId, otp: code, expiresAt: expiresAt.toISOString(), parcels: parcels.map(toMyParcel) };
 }
 
 export async function cancel(_input: Input<'cancelCollection'>, ctx: Ctx) {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIsFocused } from 'expo-router';
 import {
   ActivityIndicator,
   Animated,
@@ -83,8 +84,16 @@ export function Page({
   modal?: boolean;
 }) {
   const entrance = useEntrance(title);
+  const focused = useIsFocused();
+  const shown = modal || focused;
   return (
-    <SafeAreaView style={styles.page} edges={modal ? ['top', 'left', 'right'] : ['left', 'right']}>
+    <SafeAreaView
+      style={[styles.page, !shown && { display: 'none' }]}
+      aria-hidden={!shown}
+      accessibilityElementsHidden={!shown}
+      importantForAccessibility={shown ? 'auto' : 'no-hide-descendants'}
+      edges={modal ? ['top', 'left', 'right'] : ['left', 'right']}
+    >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, minHeight: 0 }}>
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
           {!!back && <Button label="‹ Back" variant="quiet" onPress={back} />}
@@ -284,6 +293,7 @@ export function Choice<T extends string>({
   value,
   onChange,
   names,
+  disabled = false,
 }: {
   label: string;
   values: readonly T[];
@@ -291,6 +301,7 @@ export function Choice<T extends string>({
   onChange: (value: T) => void;
   /** Display names; defaults to a humanised value. */
   names?: Partial<Record<T, string>>;
+  disabled?: boolean;
 }) {
   return (
     <View style={{ gap: 9 }}>
@@ -302,6 +313,8 @@ export function Choice<T extends string>({
             accessibilityRole="radio"
             accessibilityLabel={names?.[item] ?? human(item)}
             aria-checked={value === item}
+            aria-disabled={disabled}
+            disabled={disabled}
             onPress={() => onChange(item)}
             style={{
               borderWidth: 1,
@@ -325,16 +338,20 @@ export function Check({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="checkbox"
       accessibilityLabel={label}
       aria-checked={checked}
+      aria-disabled={disabled}
+      disabled={disabled}
       onPress={() => onChange(!checked)}
       style={{ ...styles.row, flexWrap: 'nowrap', minHeight: 48, paddingVertical: 8 }}
     >

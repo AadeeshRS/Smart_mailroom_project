@@ -40,6 +40,7 @@ const EXPECTED: Record<Operation, Permission> = {
   updateRequest: 'MEMBER',
   cancelRequest: 'MEMBER',
   collectNow: 'MEMBER',
+  getMyCollection: 'MEMBER',
   cancelCollection: 'MEMBER',
   listCollections: 'OPERATOR',
   verifyCollection: 'OPERATOR',

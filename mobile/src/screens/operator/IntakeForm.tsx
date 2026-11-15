@@ -1,8 +1,8 @@
 import { randomUUID } from 'expo-crypto';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Text } from 'react-native';
-import type { Schema } from '../../api/service';
-import { useAction } from '../../hooks';
+import { ServiceError, type Schema } from '../../api/service';
+import { useAction, useResource } from '../../hooks';
 import { CARRIERS, intakeBody, matchText, memberLine, type Draft } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
 import { Body, Button, Card, Choice, Feedback, Field, Heading, Muted, Notice, Page, date, styles } from '../../ui';
@@ -23,6 +23,8 @@ export function IntakeForm({
   onCancel: () => void;
 }) {
   const { api } = useSession();
+  const latest = useResource(() => api.lookupParcel({ code: lookup.code }), lookup.code);
+  const current = latest.data ?? lookup;
   const [draft, setDraft] = useState<Draft>(() => ({
     id: randomUUID(),
     kind: lookup.kind,
@@ -38,26 +40,48 @@ export function IntakeForm({
     note: '',
   }));
   const save = useAction();
-  const set = (field: keyof Draft) => (value: string) => setDraft({ ...draft, [field]: value });
+  const submitted = useRef<Draft | undefined>(undefined);
+  const uncertain = !!submitted.current && !!save.error;
+  const locked = save.busy || uncertain;
+  const set = (field: keyof Draft) => (value: string) => {
+    if (!locked) setDraft(current => ({ ...current, [field]: value }));
+  };
 
   async function submit() {
-    const parcel = await save.run(() => api.intakeParcel(intakeBody(draft)));
-    if (parcel) onSaved(parcel, draft);
+    const original = submitted.current ?? { ...draft };
+    submitted.current = original;
+    const parcel = await save.run(async () => {
+      try {
+        return await api.intakeParcel(intakeBody(original));
+      } catch (error) {
+        if (error instanceof ServiceError && error.code !== 'NETWORK' && error.code !== 'INTERNAL')
+          submitted.current = undefined;
+        throw error;
+      }
+    });
+    if (parcel) onSaved(parcel, original);
   }
 
   return (
-    <Page title="Label details" subtitle={lookup.code} back={onCancel}>
-      {!!lookup.existing.length && (
+    <Page title="Label details" subtitle={lookup.code} back={locked ? undefined : onCancel}>
+      {uncertain && (
+        <Notice>
+          The connection was interrupted. Retry Save parcel with these original details to check whether it was
+          received. This avoids logging it twice.
+        </Notice>
+      )}
+      {!!current.existing.length && (
         <Notice danger>
-          {`Already logged ${lookup.existing.length === 1 ? 'once' : `${lookup.existing.length} times`}: `}
-          {lookup.existing.map(p => `${date(p.receivedAt)}, shelf ${p.shelf}, ${matchText(p)}`).join('; ')}. Check it
+          {`Already logged ${current.existing.length === 1 ? 'once' : `${current.existing.length} times`}: `}
+          {current.existing.map(p => `${date(p.receivedAt)}, shelf ${p.shelf}, ${matchText(p)}`).join('; ')}. Check it
           isn’t the same parcel.
         </Notice>
       )}
-      {!!lookup.request && <RequestBanner request={lookup.request} />}
+      {!!current.request && <RequestBanner request={current.request} />}
       <Card>
         <Choice
           label="This code is"
+          disabled={locked}
           values={['AWB', 'ORDER_ID'] as const}
           value={draft.kind}
           onChange={set('kind')}
@@ -65,6 +89,7 @@ export function IntakeForm({
         />
         <Choice
           label="Carrier"
+          disabled={locked}
           values={CARRIER_CHOICES}
           value={draft.carrier}
           onChange={set('carrier')}
@@ -72,6 +97,7 @@ export function IntakeForm({
         />
         <Field
           label={draft.kind === 'AWB' ? 'Order ID (optional)' : 'AWB (optional)'}
+          editable={!locked}
           value={draft.otherCode}
           onChangeText={set('otherCode')}
           autoCapitalize="characters"
@@ -79,21 +105,34 @@ export function IntakeForm({
       </Card>
       <Card>
         <Heading>From the label</Heading>
-        <Field label="Name" value={draft.labelName} onChangeText={set('labelName')} />
-        <Field label="Phone" value={draft.labelPhone} onChangeText={set('labelPhone')} keyboardType="phone-pad" />
+        <Field label="Name" value={draft.labelName} onChangeText={set('labelName')} editable={!locked} />
+        <Field
+          label="Phone"
+          value={draft.labelPhone}
+          onChangeText={set('labelPhone')}
+          keyboardType="phone-pad"
+          editable={!locked}
+        />
         <Field
           label="Email"
+          editable={!locked}
           value={draft.labelEmail}
           onChangeText={set('labelEmail')}
           keyboardType="email-address"
           autoCapitalize="none"
         />
-        <Field label="Hostel" value={draft.labelHostel} onChangeText={set('labelHostel')} />
-        <Field label="Room" value={draft.labelRoom} onChangeText={set('labelRoom')} />
+        <Field label="Hostel" value={draft.labelHostel} onChangeText={set('labelHostel')} editable={!locked} />
+        <Field label="Room" value={draft.labelRoom} onChangeText={set('labelRoom')} editable={!locked} />
       </Card>
       <Card>
-        <Field label="Shelf" value={draft.shelf} onChangeText={set('shelf')} autoCapitalize="characters" />
-        <Field label="Note (optional)" value={draft.note} onChangeText={set('note')} />
+        <Field
+          label="Shelf"
+          value={draft.shelf}
+          onChangeText={set('shelf')}
+          autoCapitalize="characters"
+          editable={!locked}
+        />
+        <Field label="Note (optional)" value={draft.note} onChangeText={set('note')} editable={!locked} />
         <Feedback error={save.error} />
         <Button label="Save parcel" onPress={submit} busy={save.busy} disabled={!draft.shelf.trim()} />
       </Card>

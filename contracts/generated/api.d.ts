@@ -417,7 +417,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Check the member's active collection without returning its secret code */
+        get: operations["getMyCollection"];
         put?: never;
         /**
          * Collect now: one code for all the member's parcels waiting in the mailroom
@@ -760,6 +761,18 @@ export interface components {
         HostelList: {
             items: components["schemas"]["Hostel"][];
         };
+        RealtimeClientFrame: {
+            /** @enum {string} */
+            type: "authenticate";
+            token: string;
+        } | {
+            /** @enum {string} */
+            type: "pong";
+        };
+        RealtimeServerFrame: {
+            /** @enum {string} */
+            type: "ready" | "changed" | "ping";
+        };
         Code60: string;
         /** @enum {string} */
         Carrier: "DELHIVERY" | "BLUEDART" | "EKART" | "AMAZON" | "DTDC" | "XPRESSBEES" | "SHADOWFAX" | "INDIA_POST" | "OTHER";
@@ -908,11 +921,19 @@ export interface components {
             items: components["schemas"]["MyRequest"][];
         };
         MyCollection: {
+            id: components["schemas"]["Id"];
             otp: string;
             /** Format: date-time */
             expiresAt: string;
             parcels: components["schemas"]["MyParcel"][];
         };
+        MyCollectionState: {
+            id: components["schemas"]["Id"];
+            /** @enum {string} */
+            status: "PENDING" | "VERIFIED";
+            /** Format: date-time */
+            expiresAt: string;
+        } | null;
         HandoverParcel: {
             id: string;
             awb: string | null;
@@ -1584,6 +1605,29 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Request"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getMyCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current code identity and expiry, or null after replacement/cancellation/completion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        collection: components["schemas"]["MyCollectionState"];
+                    };
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

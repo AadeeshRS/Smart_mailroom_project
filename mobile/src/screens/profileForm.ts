@@ -21,6 +21,13 @@ export const formFrom = (user?: Schema<'User'>): ProfileForm => ({
   roomNumber: user?.roomNumber ?? '',
 });
 
+/** Accept remote changes only for fields the user has not edited since the last server snapshot. */
+export function rebaseForm(draft: ProfileForm, before: ProfileForm, next: ProfileForm): ProfileForm {
+  return Object.fromEntries(
+    (Object.keys(next) as (keyof ProfileForm)[]).map(key => [key, draft[key] === before[key] ? next[key] : draft[key]]),
+  ) as ProfileForm;
+}
+
 /** Only the fields that changed, ready for PATCH /me. Blank optional fields are cleared. */
 export function changes(form: ProfileForm, before: ProfileForm, member: boolean) {
   const out: Record<string, string | null> = {};

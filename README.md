@@ -85,6 +85,34 @@ Home instead.
 
 ## Checks
 
+### Automatic screen updates
+
+Authenticated WebSockets notify focused screens when another client changes their data. Successful local
+writes refresh immediately too. Reconnecting or returning to the app fetches current data, including changes
+missed offline. Healthy connections do not poll every second; a 15-second fallback covers disconnected sockets
+and failed reads. Requests are serialized and late responses from old screens/accounts are discarded. Unsaved
+form fields survive refreshes. Collection removes handed-over parcels and closes the code sheet when none remain.
+Replacing/cancelling a code on another device also clears the old presentation. Open staff handover sheets
+follow verification and parcel changes, and stop accepting actions once the collection is inactive. Profile
+updates from another device merge into untouched fields without erasing a local draft.
+See [the protocol, deployment limits and device checks](docs/REALTIME.md). The hub supports one API process;
+shared pub/sub is needed before scaling to multiple processes.
+
+### Camera test labels
+
+Open [the printable barcode labels](docs/test-labels/labels.html) on another screen, or print at 100% scale.
+Each Code 128 barcode contains its displayed synthetic AWB. Add that AWB under the member's Requests, then use
+**Scan barcode** as the operator on a physical phone. Confirm the decoded AWB, carrier and requested member,
+enter a shelf, and save. Leave contact fields blank to test request matching alone. Existing AWBs may show a
+duplicate warning; the labels do not create or reset any data.
+
+Regenerate the labels with `node scripts/generate-test-labels.cjs` after installing `mobile/` dependencies.
+The script uses Expo's installed barcode tooling and verifies every generated image decodes to its exact AWB.
+That check does not replace a physical phone/camera test.
+
+The [refinement summary and final phone checklist](docs/REFINEMENT_SUMMARY.md) records the tested edge cases,
+current limitations and how to complete the final multi-phone check.
+
 Before every push, from the repo root:
 
 ```powershell

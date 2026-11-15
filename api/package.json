@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.1",
+    "@fastify/websocket": "11.3.7",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "ajv": "8.20.0",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@types/node": "24.10.1",
     "@types/pg": "8.15.6",
+    "@types/ws": "8.18.2",
     "prettier": "3.10.1",
     "prisma": "7.10.1",
     "tsx": "4.20.6",

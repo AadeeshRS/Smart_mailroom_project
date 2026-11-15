@@ -1,8 +1,28 @@
 import { expect, it, vi } from 'vitest';
 import { createHttpService, normalizeBaseUrl } from '../src/api/http';
 import { ServiceError, errorText } from '../src/api/service';
+import { watchResource } from '../src/refresh';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+it('invalidates visible data after successful writes, without invalidating after reads or failed writes', async () => {
+  const load = vi.fn(async () => 'current');
+  const live = watchResource(load, vi.fn(), vi.fn(), vi.fn(), () => true);
+  const fetcher = vi.fn<typeof fetch>(async () => json({ ok: true }));
+  const { api } = createHttpService('http://localhost/v1', fetcher);
+  try {
+    await Promise.resolve();
+    await api.listHostels({});
+    expect(load).toHaveBeenCalledTimes(1);
+    await api.markNotificationsRead({});
+    expect(load).toHaveBeenCalledTimes(2);
+    fetcher.mockResolvedValueOnce(json({ error: { code: 'FORBIDDEN', message: 'Denied' } }, 403));
+    await expect(api.markNotificationsRead({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(load).toHaveBeenCalledTimes(2);
+  } finally {
+    live.stop();
+  }
+});
 
 it('maps generated paths, query, JSON bodies and the bearer token', async () => {
   const fetcher = vi.fn<typeof fetch>(async () => json({ ok: true }));

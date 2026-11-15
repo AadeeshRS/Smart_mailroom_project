@@ -1,4 +1,5 @@
 import { routes } from './routes.generated';
+import { notifyChanged } from '../refresh';
 import { ServiceError, type Input, type MailroomService, type Output } from './service';
 
 type Operation = keyof typeof routes;
@@ -41,7 +42,10 @@ export function createHttpService(base: string, fetcher: typeof fetch = fetch, t
         cache: 'no-store',
       });
       const result = await response.json();
-      if (response.ok) return result as Output<K>;
+      if (response.ok) {
+        if (route.method !== 'GET') notifyChanged();
+        return result as Output<K>;
+      }
       const error = result?.error;
       if (error && typeof error.code === 'string' && typeof error.message === 'string')
         throw new ServiceError(error.code, error.message, !!error.retryable, error.requestId);

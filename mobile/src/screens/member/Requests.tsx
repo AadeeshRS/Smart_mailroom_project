@@ -29,15 +29,23 @@ export function MemberRequests() {
   return (
     <Page title="Requests" subtitle="Expecting a parcel? Add its AWB and it’s linked to you when it arrives.">
       <Card>
-        <Field label="AWB / tracking number" value={draft.awb} onChangeText={set('awb')} autoCapitalize="characters" />
+        <Field
+          label="AWB / tracking number"
+          value={draft.awb}
+          onChangeText={set('awb')}
+          autoCapitalize="characters"
+          editable={!save.busy}
+        />
         <Field
           label="Order ID (optional)"
+          editable={!save.busy}
           value={draft.orderId}
           onChangeText={set('orderId')}
           autoCapitalize="characters"
         />
         <Field
           label="Delivery OTP (optional)"
+          editable={!save.busy}
           hint={OTP_HINT}
           value={draft.deliveryOtp}
           onChangeText={set('deliveryOtp')}
@@ -85,7 +93,14 @@ function RequestCard({ request, onChanged }: { request: Schema<'MyRequest'>; onC
       {open && (
         <>
           <Muted>Expires {date(request.expiresAt)} if nothing arrives.</Muted>
-          <Field label="Delivery OTP" hint={OTP_HINT} value={otp} onChangeText={setOtp} keyboardType="number-pad" />
+          <Field
+            label="Delivery OTP"
+            hint={OTP_HINT}
+            value={otp}
+            onChangeText={setOtp}
+            keyboardType="number-pad"
+            editable={!change.busy}
+          />
           <Feedback error={change.error} />
           <Button
             label="Save OTP"

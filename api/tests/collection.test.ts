@@ -196,3 +196,24 @@ test('a label name that differs from the member, or is missing, needs the ID car
   const audit = await db.auditEvent.findFirst({ where: { parcelId: other.id, action: 'COLLECTED' } });
   assert.match(audit!.detail, /label name differs; ID card checked$/);
 });
+
+test('members can check code replacement, verification, cancellation and expiry without replaying the OTP', async () => {
+  assert.deepEqual(await ok('getMyCollection', {}, asha.token), { collection: null });
+  await parcelFor('Asha');
+  const first = await ok('collectNow', {}, asha.token);
+  const state = await ok('getMyCollection', {}, asha.token);
+  assert.equal(state.collection?.id, first.id);
+  assert.equal(state.collection?.status, 'PENDING');
+  assert.equal('otp' in state.collection!, false);
+  const other = await signIn('MEMBER');
+  assert.deepEqual(await ok('getMyCollection', {}, other.token), { collection: null });
+  const second = await ok('collectNow', {}, asha.token);
+  assert.notEqual(second.id, first.id);
+  await ok('verifyCollection', { collectionId: second.id, otp: second.otp }, operator.token);
+  assert.equal((await ok('getMyCollection', {}, asha.token)).collection?.status, 'VERIFIED');
+  await ok('cancelCollection', {}, asha.token);
+  assert.deepEqual(await ok('getMyCollection', {}, asha.token), { collection: null });
+  await ok('collectNow', {}, asha.token);
+  clock.now += settings.collectionCodeMinutes * 60_000 + 1;
+  assert.deepEqual(await ok('getMyCollection', {}, asha.token), { collection: null });
+});
