@@ -124,7 +124,10 @@ docs/                 plans, deployment, ADRs
 ```
 api/src/
   server.ts              start the HTTP server and the worker
-  app.ts                 Fastify setup; routes generated from the contract; central permission check
+  app.ts                 Fastify setup; routes generated from the contract; central permission check; after each
+                         successful write, replies first and then hands it to realtime.afterWrite
+  realtime.ts            the live-update WebSocket at /v1/realtime: authentication, heartbeat, who hears about which
+                         write (in memory; see 4.10)
   core/
     config.ts            environment parsing and production guards
     db.ts                Prisma client (no global lock, see 4.6)
@@ -144,7 +147,8 @@ api/src/
     collection/ service.ts handlers.ts   collect now → OTP; operator queue; complete handover
     notifications/ service.ts handlers.ts in-app inbox; queue push/email; push + email senders
     admin/      handlers.ts              stats, aging list, remind, mark returned
-  jobs/worker.ts         every N seconds: send notifications, expire collections and requests, clean up sessions and rate rows, reminders
+  jobs/worker.ts         every 60 s: expire collections and requests, clean up sessions and rate rows, reminders,
+                         retention, pushes; publishes a live update only to the members (and staff) a job affected
   scripts/create-admin.ts  production-safe first-admin bootstrap
 ```
 
@@ -178,7 +182,7 @@ mobile/
       history.tsx              past parcels
       profile.tsx              edit allowed fields, change password, logout
       parcel/[id].tsx          details + OTP sheet after Collect now
-    (operator)/_layout.tsx     tabs: Scan · Giveaway · Parcels · Profile; polls the collection queue
+    (operator)/_layout.tsx     tabs: Scan · Giveaway · Parcels · Profile; the giveaway queue updates live and pops up new codes
       scan.tsx                 scan → lookup panel (request, delivery OTP, duplicates) → intake form
       giveaway.tsx             pending collections; enter OTP → hand over
       parcels.tsx              search, unmatched filter, manual assign
@@ -320,11 +324,11 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 | `DELETE /auth/session` | AUTH | Log out |
 | `GET /hostels` | PUBLIC | Hostel list for the registration dropdown |
 | `GET /me` · `PATCH /me` · `POST /me/password` | AUTH | Profile · edit allowed fields (`PATCH` rejects `email` and `name`) · change password |
-| `PUT /me/devices/{token}` · `DELETE /me/devices/{token}` | AUTH | Register or remove a push token |
-| `GET /me/notifications` · `POST /me/notifications/{id}/read` | AUTH | Inbox |
+| `PUT /me/devices` | MEMBER | Register this phone's push token for the current session (ends with the session) |
+| `GET /me/notifications` · `POST /me/notifications/read` | MEMBER | The latest 30 notifications · mark them all read |
 | `GET /me/parcels?view=ready\|history` | MEMBER | Home (ready to collect) and past parcels |
 | `GET /me/requests` · `POST /me/requests` · `PATCH /me/requests/{id}` · `DELETE /me/requests/{id}` | MEMBER | Requests. `POST` returns the matched parcel if it's already in the mailroom |
-| `POST /me/collection` · `DELETE /me/collection` | MEMBER | Collect now → `{ otp, expiresAt, parcels }` for all the member's waiting parcels (replaces any open code) · cancel |
+| `POST /me/collection` · `DELETE /me/collection` · `GET /me/collection` | MEMBER | Collect now → `{ id, otp, expiresAt, parcels }` for all the member's waiting parcels (replaces any open code) · cancel · the open code's id, state and expiry, never the OTP (the code sheet uses it to close when the code is replaced or used) |
 | `GET /parcels/lookup?code=` | OPERATOR | Detected carrier and kind, the matching OPEN request (member name, room, **delivery OTP**), existing parcels with this code |
 | `POST /parcels` | OPERATOR | Intake (UUID `id`), runs matching, returns the parcel and the match result |
 | `GET /parcels?q=&status=&unmatched=&cursor=` · `GET /parcels/{id}` | OPERATOR | Search (keyset pagination) · detail with audit history |
@@ -336,6 +340,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 | `POST /admin/parcels/{id}/remind` · `POST /admin/parcels/{id}/return` | ADMIN | Send a reminder push · mark returned to sender |
 | `GET /admin/users` · `POST /admin/users` · `PATCH /admin/users/{id}` | ADMIN | List and search · create an operator or admin (invite code emailed) · change role or deactivate (deactivating revokes their sessions) |
 | `POST /admin/hostels` · `PATCH /admin/hostels/{id}` | ADMIN | Manage the hostel list |
+| `GET /realtime` (WebSocket upgrade, `x-realtime` in the contract) | AUTH, by a token in the first frame | Live updates: frames are only `{ type }` (`ready`, `changed`, `ping`); see 4.10 |
 | `GET /healthz` · `GET /readyz` | outside the contract | Is the process alive · can it reach the database |
 
 ### 4.10 Notifications
@@ -343,7 +348,13 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 - `notifications.queue(userId, type, title, body, parcelId)` inserts a `Notification` row in the **same transaction** as the change that caused it.
 - `jobs/worker.ts` sends pending pushes through the Expo push API with plain `fetch`, no SDK needed. It retries with backoff up to 5 times, and deletes devices the push service reports as invalid.
 - **Emails** (verification and reset codes, operator invites) are sent synchronously through Resend's HTTP API with `fetch`. In development and test a console provider is used, and in production a missing API key stops the server from starting.
-- **Operator pop-up:** the operator layout checks `GET /collections` every 5 s while the app is in the foreground, and shows a modal when a new code appears. `ponytail:` polling; switch to server-sent events if there are more than about 20 operators.
+- **Live updates** (`api/src/realtime.ts`, `mobile/src/realtime.ts`; details in `docs/REALTIME.md`): one WebSocket per signed-in app in the foreground. The first frame carries the session token; frames from the server are only `{ type }`, and a `changed` frame makes the app re-read its open screens over HTTP. Who hears what:
+  - changes to parcels, requests, collections, users and hostels: the affected members and every staff app;
+  - personal writes (logout, profile, password, notifications, devices): only the writer's other sessions;
+  - public writes (sign-up, codes, login, password reset): nobody;
+  - never the session that made the write, which refreshes itself; the worker only tells the members (and staff) its jobs affected.
+- **Cost of an idle app:** none on the database. Publishing and the 20-second ping work from memory; a session is re-read only when its expiry passes or a write can have ended it (logout, password change or reset, deactivation, role change), and ended sessions close with 4001. The HTTP reply is sent before the fan-out.
+- **Operator pop-up:** the giveaway queue is a live resource in the operator layout; a code not seen before pops up the handover sheet. Without a socket, open screens re-read every 15 s.
 
 ### 4.11 Shared database and hosting
 
@@ -353,6 +364,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 - **Mobile:** `EXPO_PUBLIC_API_BASE_URL=https://<service>/v1`. That works on any network with no LAN setup.
 - **Migrations run from the deployment:** Render's start command applies them. The only steps a laptop runs against Neon are `prisma migrate status` / `migrate deploy` the guarded way in `docs/DEPLOYMENT.md` (the URL from `api/.env.neon` only, never `api/.env`), and `npm run create-admin:neon`, which refuses any host not ending in `neon.tech`. Never `migrate reset`, `db push`, the seed, the API tests or the browser suites. Developers use a local database for development and always for tests.
 - Render's Free plan sleeps after 15 minutes idle (the first request then takes about a minute), and the background worker runs only while it's awake. It has no Shell, so the first admin is created from a laptop with `npm run create-admin:neon` (`docs/DEPLOYMENT.md`).
+- **WebSockets on Render Free** work; Render counts WebSocket messages as traffic, so an app left open in the foreground (it answers a ping every 20 s) keeps the service awake, and the worker's minute runs keep Neon's compute awake too. The live-update hub is in memory: it's correct for this one instance, and needs shared pub/sub before running two.
 
 ## 5. Security controls specific to this workflow
 
@@ -365,6 +377,7 @@ Only members with a **verified** email are matched. Unverified accounts can't re
 | Account takeover | scrypt passwords (minimum 8 characters). Login limited to 10 per 15 minutes per email and per IP. Code verification capped at 5 attempts. Reset revokes all sessions. Same response whether or not an email is registered |
 | Privilege escalation | Roles change only through `PATCH /admin/users` (ADMIN). An admin can't demote themselves or deactivate the last admin. One permission check, plus the matrix test |
 | Personal data | Members see only their own data. Operators see contact details only for parcel work. No phone numbers, OTPs, passwords or tokens in logs (log redaction in Phase 8) |
+| The live-update socket leaks data or is abused | Frames carry only `{ type }`, never IDs, contacts or OTPs; screens re-read through the ordinary permission-checked HTTP API. The token goes in the first frame, never a URL (a query string gets 400), so there's no Origin check (no cookie to ride on). 5 seconds to send it, then the socket is terminated; 2 KiB per frame; 5 sockets per user; 10 unauthenticated sockets per IP; 500 in all. Members hear only about their own changes |
 
 ## 6. Implementation phases
 
@@ -428,7 +441,7 @@ Sizes: **S** < 1 day · **M** 1-3 days · **L** 3+ days.
 | 5.1 `collection` module: Collect now (one code for all the member's waiting parcels; create or replace the open code, return the OTP), cancel, the operator queue (each member once, with their parcels), verify (5 attempts, then cancelled) and complete (the ticked parcels; atomic conditional updates as in 4.6; audit). Unticked parcels stay `IN_MAILROOM` | Tests: happy path with one of two parcels ticked; wrong OTP ×5 cancels the code; an expired code fails; a double complete gives `ALREADY_COLLECTED`; replacing a code invalidates the old one; a parcel that isn't the member's rolls the handover back |
 | 5.2 Notifications for collection-requested (to operators: optional push) and collected (to the member) | |
 | 5.3 Mobile member Collect now sheet (large OTP, countdown, regenerate) and `history.tsx` | |
-| 5.4 Mobile `(operator)/giveaway.tsx` plus the polling pop-up in the operator layout. The panel shows the member's name, ID, hostel and room once, with each parcel's **label name** and shelf; after the OTP is verified the operator ticks the parcels handed over | End-to-end browser test: intake → Collect now → operator verifies and completes → the parcel shows in history |
+| 5.4 Mobile `(operator)/giveaway.tsx` plus the pop-up in the operator layout (a live resource since the WebSocket channel; it polled every 5 s before). The panel shows the member's name, ID, hostel and room once, with each parcel's **label name** and shelf; after the OTP is verified the operator ticks the parcels handed over | End-to-end browser test: intake → Collect now → operator verifies and completes → the parcel shows in history |
 | 5.5 **Name check (user rule).** Phone and personal email aren't verified but drive auto-linking, so the giveaway check is the real safeguard. If the label name is empty or shares no word with the member's name (case-insensitive), the panel shows a warning and the operator must tap **Checked ID card** before completing. The API enforces it: `complete` takes `idChecked`, refuses a mismatch without it, and records it in the audit entry | Test: a mismatch without `idChecked` is refused; with it, the handover completes and the audit entry says the ID card was checked |
 
 ### Phase 6: Push notifications (M) for W7

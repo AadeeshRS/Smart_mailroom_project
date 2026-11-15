@@ -89,8 +89,9 @@ Home instead.
 
 Authenticated WebSockets notify focused screens when another client changes their data. Successful local
 writes refresh immediately too. Reconnecting or returning to the app fetches current data, including changes
-missed offline. Healthy connections do not poll every second; a 15-second fallback covers disconnected sockets
-and failed reads. Requests are serialized and late responses from old screens/accounts are discarded. Unsaved
+missed offline. A healthy idle connection causes no reads and no database queries (it only answers a ping every
+20 seconds); a 15-second fallback covers disconnected sockets and failed reads. An app left open keeps Render's
+Free service awake. Requests are serialized and late responses from old screens/accounts are discarded. Unsaved
 form fields survive refreshes. Collection removes handed-over parcels and closes the code sheet when none remain.
 Replacing/cancelling a code on another device also clears the old presentation. Open staff handover sheets
 follow verification and parcel changes, and stop accepting actions once the collection is inactive. Profile

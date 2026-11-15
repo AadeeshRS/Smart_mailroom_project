@@ -39,6 +39,15 @@ of Node and Prisma.
 
 - The service **sleeps after 15 minutes with no requests**. The next request wakes it and takes about a minute; the
   app shows its normal loading state meanwhile.
+- **WebSockets work on the Free plan**, and Render counts WebSocket messages as traffic. The app keeps one live-update
+  socket open while it's in the foreground and answers a ping every 20 seconds, so **any app left open keeps the
+  service awake**; it sleeps only once every app is in the background or closed. An open socket costs no database
+  query, but while the service is awake the worker's once-a-minute run keeps Neon's compute awake too. One service
+  kept awake around the clock uses about 744 of the workspace's 750 free hours a month, and Neon's Free plan allows
+  100 CU-hours a month (about 400 hours of its smallest compute), so phones left open all day and night would use up
+  Neon's allowance in about 17 days.
+- Deploys and restarts drop the sockets; the app reconnects (backing off up to 30 s) and re-reads its screens. The
+  live-update hub lives in this one process: before running a second instance, add shared pub/sub.
 - The **background worker runs only while the service is awake**. It expires old requests and collection codes,
   deletes stale rows, and (from Phase 6) sends pushes and reminders. An operator logging a parcel wakes the service,
   so its push still goes out within a minute; reminders and expiries wait for the next wake. A collection code is also
@@ -94,7 +103,7 @@ Brevo** (that means a new sender in `api/src/modules/notifications/email.ts`).
    | `TRUST_PROXY` | `1` (Render's proxy is one hop; rate limits then see the real client IP) |
    | `NODE_VERSION` | `24` (matches `engines` in `api/package.json`) |
    | `PORT` | Don't set: Render provides it |
-   | `CORS_ORIGINS` | Don't set: the phone app doesn't need it (only a hosted web build would) |
+   | `CORS_ORIGINS` | Don't set. Only a hosted web build would need it, and the web build is for testing only. The live-update socket doesn't check Origin at all (React Native on Android always sends one; the token goes in the first frame) |
    | `REQUEST_EXPIRY_DAYS`, `COLLECTION_CODE_MINUTES`, `WAITING_TOO_LONG_DAYS`, `REMINDER_AFTER_DAYS`, `RETENTION_DAYS`, `RATE_*` | Don't set unless changing the defaults (30 days, 15 minutes, 7 days, 3 days, 90 days, the limits below) |
    | `SEED_PASSWORD`, `CONTRACT_PATH` | Don't set |
 
@@ -142,7 +151,7 @@ and from then on codes are emailed and no longer logged.
 | `RESEND_API_KEY`, `MAIL_FROM` | in production | Without a key, codes go to the console (development, test and staging only) |
 | `HOST`, `PORT` | yes | `HOST=0.0.0.0` on a host; the platform sets `PORT` |
 | `TRUST_PROXY` | behind a proxy | `1` on Render/Railway, so rate limits see the client IP, not the proxy's |
-| `CORS_ORIGINS` | web clients only | Comma-separated origins; native apps don't need it |
+| `CORS_ORIGINS` | web clients only | Comma-separated origins for HTTP calls from a browser (the web build is for testing only). The `/v1/realtime` WebSocket ignores Origin |
 | `RATE_LOGIN_PER_IP` | no | Default 300 per 15 minutes |
 | `RATE_CODES_PER_IP` | no | Default 150 per 15 minutes (register, resend, forgot password) |
 | `RATE_CODE_CHECKS_PER_IP` | no | Default 300 per 15 minutes |

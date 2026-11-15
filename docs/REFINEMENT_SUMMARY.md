@@ -23,14 +23,15 @@ Automated database tests and browser fixtures use only the separate local `smart
   than parcel details, member contacts or OTPs. HTTP continues to enforce permissions and ownership for reads
   and writes.
 - Members receive ordinary events affecting their own records. Staff receive operational events. Shared
-  hostel changes and background reconciliation can notify all signed-in clients.
+  hostel changes notify all signed-in clients; the background worker notifies only the members (and staff) its
+  jobs affected (changed in the WebSocket fix round, see `docs/REALTIME.md`).
 - Successful local writes refresh immediately. A connected client no longer checks every screen once a second.
   A 15-second fallback covers disconnected sockets and failed reads.
 - Reconnection triggers fresh reads to recover missed changes. The client backs off connection failures,
   responds to heartbeats, detects silent connections, closes in the background and reconnects on return.
 - Logout, expired/revoked sessions, deactivation and role changes invalidate the socket. Tokens are sent in the
   first authentication frame, never in connection URLs. Frames, connection counts and slow-client buffers are
-  bounded; browser origins are checked.
+  bounded. Origin is not checked (React Native on Android always sends one; the token is in the first frame).
 - A transport failure during native socket authentication or close is handled as a reconnectable failure,
   rather than an uncaught app error.
 

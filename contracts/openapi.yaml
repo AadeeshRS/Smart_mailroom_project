@@ -16,12 +16,17 @@ x-realtime:
   path: /realtime
   x-permission: AUTH
   description: >-
-    WebSocket companion to REST. Authenticate in the first JSON frame within five seconds;
-    never send credentials in a URL. The server sends ready after validating the session,
-    changed for committed writes affecting this member (or staff), and ping every 20 seconds.
-    Reply with pong. Frames carry no parcel, contact or OTP data. Re-fetch authorized HTTP
-    resources on ready and changed; ready also recovers events missed while disconnected.
-    Expired/revoked sessions close with 4001, invalid protocol with 1008, overload with 1013.
+    WebSocket companion to REST. Send the first JSON frame (authenticate) within five seconds,
+    or the socket is terminated; never send credentials in a URL. No Origin check. The server
+    sends ready after validating the session; changed after a successful write to parcels,
+    requests, collections, users or hostels that affects this member (staff hear all of these),
+    or a personal write from this user's other session; never for public operations, and never
+    to the session that made the write; and ping every 20 seconds. Reply with pong. Frames carry
+    no parcel, contact or OTP data. Re-fetch authorized HTTP resources on ready and changed;
+    ready also recovers events missed while disconnected. 4001 means the token was checked and
+    rejected (sign in again); 1008 invalid protocol, 1011 database unavailable, 1013 overload,
+    and an abnormal close (1006) after a timeout or missed ping: reconnect for all of these.
+    Limits: 2 KiB per frame, 5 sockets per user, 10 unauthenticated sockets per IP (429).
     Connections are process-local; use a shared event broker before scaling to multiple API instances.
   clientFrame: { $ref: '#/components/schemas/RealtimeClientFrame' }
   serverFrame: { $ref: '#/components/schemas/RealtimeServerFrame' }
