@@ -33,7 +33,14 @@ export type Realtime = {
  * query: publishing and pinging work from memory, and a session is re-read only when its expiry passes or a write
  * (logout, password change or reset, deactivation, role change) can have ended it. */
 export async function realtime(app: FastifyInstance, db: PrismaClient, settings: Config, now: () => Date) {
-  await app.register(websocket, { options: { maxPayload: 2048, perMessageDeflate: false } });
+  await app.register(websocket, {
+    options: { maxPayload: 2048, perMessageDeflate: false },
+    // An oversized or broken frame is the client's fault: log it at info, not as a server error (WS-09).
+    errorHandler: (error, socket, request) => {
+      request.log.info({ code: (error as { code?: string }).code }, 'Dropped a live-update socket after a bad frame');
+      socket.terminate();
+    },
+  });
   const clients = new Set<Client>();
   const pending = new Set<WebSocket>();
   /** Unauthenticated sockets per client IP (WS-05): one address can't fill the 500 slots. Behind Render's proxy
