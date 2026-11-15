@@ -82,8 +82,8 @@ export async function realtime(app: FastifyInstance, db: PrismaClient, settings:
       websocket: true,
       onRequest: async (request, reply) => {
         if (request.raw.url?.includes('?')) return reply.code(400).send({ error: 'No query parameters accepted' });
-        if (request.headers.origin && !settings.origins.includes(request.headers.origin))
-          return reply.code(403).send({ error: 'Origin not allowed' });
+        // No Origin check: React Native (Android) always sends Origin: http[s]://<API host>, and the session token
+        // travels in the first frame, never a cookie, so another site can't use a socket without it.
         if (clients.size + pending.size >= 500) return reply.code(503).send({ error: 'Try again later' });
       },
     },

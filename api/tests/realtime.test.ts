@@ -30,7 +30,7 @@ async function connect(token?: string) {
   return socket;
 }
 
-test('the companion channel is AUTH, rejects bad frames/tokens, query credentials and untrusted origins', async () => {
+test('the companion channel is AUTH and rejects bad frames, bad tokens and query credentials', async () => {
   assert.equal(contract['x-realtime']['x-permission'], 'AUTH');
   const socket = await connect();
   const closed = once(socket, 'close');
@@ -41,7 +41,17 @@ test('the companion channel is AUTH, rejects bad frames/tokens, query credential
   malformed.send(JSON.stringify({ type: 'subscribe', userId: 'someone-else' }));
   assert.equal((await denied)[0], 1008);
   await assert.rejects(app.injectWS('/v1/realtime?token=secret'));
-  await assert.rejects(app.injectWS('/v1/realtime', { headers: { origin: 'https://untrusted.example' } }));
+});
+
+test('any Origin is accepted, including the http://<API host> that React Native on Android always sends', async () => {
+  const member = await signIn('MEMBER');
+  for (const origin of ['http://127.0.0.1:3000', 'https://smart-mailroom-api.onrender.com']) {
+    const socket = await app.injectWS('/v1/realtime', { headers: { origin } });
+    sockets.push(socket);
+    const ready = once(socket, 'message');
+    socket.send(JSON.stringify({ type: 'authenticate', token: member.token }));
+    assert.deepEqual(JSON.parse(String((await ready)[0])), { type: 'ready' }, origin);
+  }
 });
 
 test('post-commit invalidations reach the recipient and staff, never an unrelated member; failed writes emit nothing', async () => {
