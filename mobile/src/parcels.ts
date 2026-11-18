@@ -100,6 +100,15 @@ export function requestText(request: Schema<'MyRequest'>) {
 export const memberLine = (m: Pick<Schema<'MemberSummary'>, 'idNumber' | 'hostelName' | 'roomNumber'>) =>
   [m.idNumber, m.hostelName, m.roomNumber && `room ${m.roomNumber}`].filter(Boolean).join(' · ');
 
+/** The Collect now QR: the code's id and its 6 digits, so one scan finds the member's code and verifies it. */
+export const collectQr = (code: { id: string; otp: string }) => `mailroom-collect:${code.id}:${code.otp}`;
+
+/** A scanned Collect now QR as the verify call's input, or undefined for any other barcode. */
+export function readCollectQr(text: string) {
+  const match = /^mailroom-collect:([\w-]{1,64}):(\d{6})$/.exec(text.trim());
+  return match ? { collectionId: match[1], otp: match[2] } : undefined;
+}
+
 /** Time left as m:ss, never below 0:00. */
 export function countdown(ms: number) {
   const seconds = Math.max(0, Math.ceil(ms / 1000));

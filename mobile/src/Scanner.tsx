@@ -9,10 +9,14 @@ export function Scanner({
   open,
   onClose,
   onScan,
+  title = 'Scan a parcel label',
+  notice = 'Point the camera at the AWB or order-ID barcode. You type the name and phone from the label next.',
 }: {
   open: boolean;
   onClose: () => void;
   onScan: (text: string) => void;
+  title?: string;
+  notice?: string;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const focused = useIsFocused();
@@ -61,13 +65,11 @@ export function Scanner({
     <Modal visible={open} animationType="slide" onRequestClose={onClose}>
       <Page
         modal
-        title="Scan a parcel label"
+        title={title}
         subtitle="Camera scanning requires a supported device and camera permission."
         back={onClose}
       >
-        <Notice>
-          Point the camera at the AWB or order-ID barcode. You type the name and phone from the label next.
-        </Notice>
+        <Notice>{notice}</Notice>
         {!!error && <Notice danger>{error}</Notice>}
         {available === false ? (
           <Card>

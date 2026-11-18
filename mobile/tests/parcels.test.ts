@@ -2,12 +2,14 @@ import { expect, it } from 'vitest';
 import {
   carrierName,
   cleanOtp,
+  collectQr,
   countdown,
   intakeBody,
   matchText,
   memberLine,
   parcelCode,
   phoneUnused,
+  readCollectQr,
   requestBody,
   requestText,
   type Draft,
@@ -127,4 +129,12 @@ it('builds request bodies and says where a request stands', () => {
 it('formats a countdown and a member line', () => {
   expect([countdown(899_001), countdown(60_000), countdown(-5)]).toEqual(['15:00', '1:00', '0:00']);
   expect(memberLine({ idNumber: '23CS1', hostelName: null, roomNumber: 'B-2' })).toBe('23CS1 · room B-2');
+});
+
+it('reads back a Collect now QR and nothing else', () => {
+  const qr = collectQr({ id: 'col_Ab-9_x', otp: '004821' });
+  expect(readCollectQr(qr)).toEqual({ collectionId: 'col_Ab-9_x', otp: '004821' });
+  expect(readCollectQr(` ${qr}\n`)).toEqual({ collectionId: 'col_Ab-9_x', otp: '004821' });
+  for (const other of ['EE123456789IN', '004821', 'mailroom-collect:col_1:4821', 'mailroom-collect::004821'])
+    expect(readCollectQr(other)).toBeUndefined();
 });

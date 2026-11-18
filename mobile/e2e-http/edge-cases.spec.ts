@@ -60,6 +60,11 @@ async function login(page: Page, email: string) {
   await field(page, 'Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
+/** Staff open a member's handover from the Giveaway list; nothing pops up by itself. */
+async function giveaway(page: Page, name: string) {
+  await page.getByRole('tab', { name: /Giveaway/ }).click();
+  await page.getByRole('button', { name: `Hand over to ${name}`, exact: true }).click();
+}
 async function parcel(token: string, email: string, name: string) {
   return call('/parcels', token, {
     id: randomUUID(),
@@ -84,12 +89,14 @@ test('another phone replacing/cancelling a code invalidates both the member code
   try {
     const counter = await context.newPage();
     await login(counter, guard.email);
-    await expect(counter.getByRole('heading', { name: student.user.name, exact: true })).toBeVisible();
+    await giveaway(counter, student.user.name);
+    await expect(field(counter, 'Code from the member')).toBeVisible();
     const replacement = await call('/me/collection', student.token, {}); // a second phone, same member
     await expect(page.getByLabel(/^Your code /)).toBeHidden();
     await expect(counter.getByText(/This collection is no longer active/)).toBeVisible();
     await expect(counter.getByRole('button', { name: 'Verify code', exact: true })).toHaveCount(0);
     await counter.getByRole('button', { name: 'Close collection', exact: true }).click();
+    await counter.getByRole('button', { name: `Hand over to ${student.user.name}`, exact: true }).click();
     await expect(field(counter, 'Code from the member')).toBeVisible();
     await field(counter, 'Code from the member').fill(replacement.otp);
     await counter.getByRole('button', { name: 'Verify code', exact: true }).click();
@@ -118,6 +125,8 @@ test('two guards see verification and partial handover updates; a remaining parc
     const [one, two] = await Promise.all(contexts.map(context => context.newPage()));
     await login(one, guard.email);
     await login(two, guard.email);
+    await giveaway(one, student.user.name);
+    await giveaway(two, student.user.name);
     await field(one, 'Code from the member').fill(otp);
     await one.getByRole('button', { name: 'Verify code', exact: true }).click();
     await expect(two.getByText(/Code verified\. Tick/)).toBeVisible();

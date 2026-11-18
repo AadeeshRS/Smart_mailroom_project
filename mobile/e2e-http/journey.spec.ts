@@ -273,12 +273,16 @@ test('a member taps Collect now; the operator verifies the code, checks the ID c
   await page.getByRole('button', { name: 'Collect now', exact: true }).click();
   const otp = (await page.getByLabel(/^Your code /).textContent()) ?? '';
   expect(otp).toMatch(/^\d{6}$/);
+  await expect(page.getByRole('img', { name: 'QR code for the mailroom to scan', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '‹ Back', exact: true }).click();
   await signOut(page);
 
-  // The operator's app pops the member up by itself.
+  // Nothing pops up over the operator's work: the member waits in the Giveaway list until they're opened.
   await signIn(page, 'operator@college.example');
-  await expect(page.getByRole('heading', { name: 'Test Member', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Receive a parcel', exact: true })).toBeVisible();
+  await expect(field(page, 'Code from the member')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Giveaway/ }).click();
+  await page.getByRole('button', { name: 'Hand over to Test Member', exact: true }).click();
   await field(page, 'Code from the member').fill(otp);
   await page.getByRole('button', { name: 'Verify code', exact: true }).click();
   await page.getByRole('checkbox', { name: `Handed over ${awb}`, exact: true }).click();
