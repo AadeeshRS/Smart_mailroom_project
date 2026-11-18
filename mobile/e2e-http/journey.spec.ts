@@ -231,6 +231,9 @@ test('a member requests a parcel with a delivery OTP; the operator sees it when 
   await page.getByRole('button', { name: 'Look up', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Requested by Test Member', exact: true })).toBeVisible();
   await expect(page.getByLabel('Delivery OTP 4 8 2 1', { exact: true })).toHaveText('4821');
+  // The requester's details start the label fields; the operator corrects what the label shows differently.
+  await expect(field(page, 'Name')).toHaveValue('Test Member');
+  await expect(field(page, 'Email')).toHaveValue('member@college.example');
   await field(page, 'Phone').fill('98XXXXXX10');
   await field(page, 'Shelf').fill('E2E');
   await page.getByRole('button', { name: 'Save parcel', exact: true }).click();

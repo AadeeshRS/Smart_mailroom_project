@@ -25,17 +25,19 @@ export function IntakeForm({
   const { api } = useSession();
   const latest = useResource(() => api.lookupParcel({ code: lookup.code }), lookup.code);
   const current = latest.data ?? lookup;
+  // A member requested this code: start the label fields from their profile, for the operator to check.
+  const requester = lookup.request?.member;
   const [draft, setDraft] = useState<Draft>(() => ({
     id: randomUUID(),
     kind: lookup.kind,
     code: lookup.code,
     otherCode: '',
     carrier: lookup.carrier ?? 'UNKNOWN',
-    labelName: '',
-    labelPhone: '',
-    labelEmail: '',
-    labelHostel: '',
-    labelRoom: '',
+    labelName: requester?.name ?? '',
+    labelPhone: requester?.phone ?? '',
+    labelEmail: requester?.email ?? '',
+    labelHostel: requester?.hostelName ?? '',
+    labelRoom: requester?.roomNumber ?? '',
     shelf,
     note: '',
   }));
@@ -114,6 +116,7 @@ export function IntakeForm({
       </Card>
       <Card>
         <Heading>From the label</Heading>
+        {!!requester && <Muted>Filled in from the request. Correct anything the label shows differently.</Muted>}
         <Field label="Name" value={draft.labelName} onChangeText={set('labelName')} editable={!locked} />
         <Field
           label="Phone"
