@@ -52,6 +52,16 @@ export type Draft = {
   note: string;
 };
 
+/** The label fields still blank, filled from a member's profile. What the operator typed from the label stays. */
+export const fillFromMember = (draft: Draft, m: Schema<'MemberSummary'>): Draft => ({
+  ...draft,
+  labelName: draft.labelName.trim() ? draft.labelName : m.name,
+  labelPhone: draft.labelPhone.trim() ? draft.labelPhone : (m.phone ?? ''),
+  labelEmail: draft.labelEmail.trim() ? draft.labelEmail : m.email,
+  labelHostel: draft.labelHostel.trim() ? draft.labelHostel : (m.hostelName ?? ''),
+  labelRoom: draft.labelRoom.trim() ? draft.labelRoom : (m.roomNumber ?? ''),
+});
+
 /** The intake request for a draft: the code goes in the field its kind says, blank fields are left out. */
 export function intakeBody(draft: Draft): Schema<'IntakeInput'> {
   const value = (text: string) => text.trim() || undefined;

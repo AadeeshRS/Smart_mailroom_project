@@ -4,6 +4,7 @@ import {
   cleanOtp,
   collectQr,
   countdown,
+  fillFromMember,
   intakeBody,
   matchText,
   memberLine,
@@ -137,4 +138,23 @@ it('reads back a Collect now QR and nothing else', () => {
   expect(readCollectQr(` ${qr}\n`)).toEqual({ collectionId: 'col_Ab-9_x', otp: '004821' });
   for (const other of ['EE123456789IN', '004821', 'mailroom-collect:col_1:4821', 'mailroom-collect::004821'])
     expect(readCollectQr(other)).toBeUndefined();
+});
+
+it('fills only the blank label fields from a member profile', () => {
+  const member = {
+    id: 'usr_1',
+    name: 'Asha Rao',
+    email: 'asha@college.example',
+    idNumber: '23CS101',
+    phone: '+919876543210',
+    hostelName: 'Hostel B',
+    roomNumber: null,
+  };
+  const filled = fillFromMember({ ...draft, labelName: 'A. Rao', labelEmail: '  ' }, member);
+  expect(filled).toEqual({
+    ...draft,
+    labelName: 'A. Rao',
+    labelEmail: 'asha@college.example',
+    labelHostel: 'Hostel B',
+  });
 });

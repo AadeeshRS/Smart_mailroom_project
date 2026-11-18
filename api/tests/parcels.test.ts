@@ -140,6 +140,13 @@ test('manual assign links an unmatched parcel once; detail shows the history', a
     found.items.map(m => m.id),
     [asha.user.id],
   );
+  // A whole phone typed with a trunk 0, and a personal email, find her too (the intake form's member lookup).
+  await db.user.update({ where: { id: asha.user.id }, data: { personalEmail: 'asha.rao@mail.example' } });
+  for (const q of ['098765 43210', 'Asha.Rao@mail.example'])
+    assert.deepEqual(
+      (await ok('searchMembers', { q }, operator.token)).items.map(m => m.id),
+      [asha.user.id],
+    );
   const results = await Promise.all([
     call('assignParcel', { parcelId: parcel.id, userId: asha.user.id }, operator.token),
     call('assignParcel', { parcelId: parcel.id, userId: bala.user.id }, operator.token),

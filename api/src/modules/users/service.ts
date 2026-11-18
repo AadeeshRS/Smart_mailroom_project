@@ -121,10 +121,11 @@ export async function listUsers(input: Input<'listUsers'>, ctx: Ctx) {
   return rows.length > take ? { items, nextCursor: items.at(-1)!.id } : { items };
 }
 
-/** Operators finding a member to assign a parcel to: verified members only, at most 20. */
+/** Operators finding a member, to assign a parcel or fill in its label from their profile: verified members
+ * only, at most 20. A whole phone number is normalised first, so 098765 43210 finds +919876543210. */
 export async function searchMembers(input: Input<'searchMembers'>, ctx: Ctx) {
   const term = input.q.trim();
-  const digits = term.replace(/\D/g, '');
+  const digits = (phone(term) ?? term).replace(/\D/g, '');
   const rows = await ctx.db.user.findMany({
     where: {
       ...matchable,
@@ -132,6 +133,7 @@ export async function searchMembers(input: Input<'searchMembers'>, ctx: Ctx) {
         { name: { contains: term, mode: 'insensitive' } },
         { idNumber: { contains: term, mode: 'insensitive' } },
         { email: { contains: term, mode: 'insensitive' } },
+        { personalEmail: { contains: term, mode: 'insensitive' } },
         { roomNumber: { equals: term, mode: 'insensitive' } },
         ...(digits.length >= 4 ? [{ phone: { contains: digits } }, { altPhone: { contains: digits } }] : []),
       ],

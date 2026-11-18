@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Text } from 'react-native';
 import { ServiceError, type Schema } from '../../api/service';
 import { useAction, useResource } from '../../hooks';
-import { CARRIERS, intakeBody, matchText, memberLine, type Draft } from '../../parcels';
+import { CARRIERS, fillFromMember, intakeBody, matchText, memberLine, type Draft } from '../../parcels';
 import { useSession } from '../../session/SessionProvider';
 import { Body, Button, Card, Choice, Feedback, Field, Heading, Muted, Notice, Page, date, styles } from '../../ui';
 
@@ -27,20 +27,23 @@ export function IntakeForm({
   const current = latest.data ?? lookup;
   // A member requested this code: start the label fields from their profile, for the operator to check.
   const requester = lookup.request?.member;
-  const [draft, setDraft] = useState<Draft>(() => ({
-    id: randomUUID(),
-    kind: lookup.kind,
-    code: lookup.code,
-    otherCode: '',
-    carrier: lookup.carrier ?? 'UNKNOWN',
-    labelName: requester?.name ?? '',
-    labelPhone: requester?.phone ?? '',
-    labelEmail: requester?.email ?? '',
-    labelHostel: requester?.hostelName ?? '',
-    labelRoom: requester?.roomNumber ?? '',
-    shelf,
-    note: '',
-  }));
+  const [draft, setDraft] = useState<Draft>(() => {
+    const blank: Draft = {
+      id: randomUUID(),
+      kind: lookup.kind,
+      code: lookup.code,
+      otherCode: '',
+      carrier: lookup.carrier ?? 'UNKNOWN',
+      labelName: '',
+      labelPhone: '',
+      labelEmail: '',
+      labelHostel: '',
+      labelRoom: '',
+      shelf,
+      note: '',
+    };
+    return requester ? fillFromMember(blank, requester) : blank;
+  });
   const save = useAction();
   const submitted = useRef<Draft | undefined>(undefined);
   const uncertain = !!submitted.current && !!save.error;
@@ -51,6 +54,23 @@ export function IntakeForm({
   const set = (field: keyof Draft) => (value: string) => {
     if (!locked) setDraft(current => ({ ...current, [field]: value }));
   };
+  // Look up a member by the label's email or phone, or their enrollment ID: one match fills the blank fields.
+  const [q, setQ] = useState('');
+  const [matches, setMatches] = useState<Schema<'MemberSummary'>[]>();
+  const [filledFrom, setFilledFrom] = useState<Schema<'MemberSummary'>>();
+  const search = useAction();
+  const fillFrom = (member: Schema<'MemberSummary'>) => {
+    if (locked) return;
+    setDraft(current => fillFromMember(current, member));
+    setFilledFrom(member);
+    setMatches(undefined);
+  };
+  async function find() {
+    const result = await search.run(() => api.searchMembers({ q: q.trim() }));
+    if (!result) return;
+    if (result.items.length === 1) fillFrom(result.items[0]);
+    else setMatches(result.items);
+  }
 
   async function submit() {
     const original = submitted.current ?? { ...draft };
@@ -116,7 +136,41 @@ export function IntakeForm({
       </Card>
       <Card>
         <Heading>From the label</Heading>
-        {!!requester && <Muted>Filled in from the request. Correct anything the label shows differently.</Muted>}
+        <Field
+          label="Look up member"
+          hint="Email or phone from the label, or their enrollment ID. Fills in the blank fields from their profile."
+          value={q}
+          onChangeText={setQ}
+          onSubmitEditing={() => void find()}
+          autoCapitalize="none"
+          editable={!locked}
+        />
+        <Button
+          label="Find member"
+          variant="quiet"
+          onPress={() => void find()}
+          busy={search.busy}
+          disabled={locked || q.trim().length < 2}
+        />
+        <Feedback error={search.error} />
+        {matches?.length === 0 && <Muted>No member matches. Type the details from the label.</Muted>}
+        {!!matches?.length && <Muted>Several members match. Pick the one on the label.</Muted>}
+        {matches?.map(m => (
+          <Button
+            key={m.id}
+            label={`Use ${[m.name, memberLine(m)].filter(Boolean).join(' · ')}`}
+            variant="quiet"
+            onPress={() => fillFrom(m)}
+          />
+        ))}
+        {filledFrom ? (
+          <Muted>
+            {`Filled in from ${filledFrom.name}’s profile${filledFrom.idNumber ? ` (${filledFrom.idNumber})` : ''}. `}
+            Correct anything the label shows differently.
+          </Muted>
+        ) : (
+          !!requester && <Muted>Filled in from the request. Correct anything the label shows differently.</Muted>
+        )}
         <Field label="Name" value={draft.labelName} onChangeText={set('labelName')} editable={!locked} />
         <Field
           label="Phone"

@@ -188,8 +188,13 @@ test('an operator logs a parcel from its label and the member with that phone se
   await page.getByRole('button', { name: 'Look up', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Label details', exact: true })).toBeVisible();
   await expect(page.getByRole('radio', { name: 'India Post', exact: true })).toBeChecked();
-  await field(page, 'Name').fill('Test Member');
-  await field(page, 'Phone').fill(phone);
+  // The label's phone finds the member; their profile fills in the rest.
+  await field(page, 'Look up member').fill(`0${phone}`);
+  await page.getByRole('button', { name: 'Find member', exact: true }).click();
+  await expect(page.getByText(/^Filled in from Test Member’s profile \(TEST0001\)\./)).toBeVisible();
+  await expect(field(page, 'Name')).toHaveValue('Test Member');
+  await expect(field(page, 'Email')).toHaveValue('member@college.example');
+  await expect(field(page, 'Phone')).toHaveValue(`+91${phone}`);
   await field(page, 'Shelf').fill('E2E');
   await page.getByRole('button', { name: 'Save parcel', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Parcel saved', exact: true })).toBeVisible();
