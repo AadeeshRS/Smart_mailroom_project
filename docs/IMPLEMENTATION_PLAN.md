@@ -499,7 +499,7 @@ Pulls in the remaining items from `docs/PRODUCTION_READINESS_PLAN.md`.
 |---|---|
 | An online Postgres database named `smart_mailroom_dev`, and its direct connection URL (done: Neon, `api/.env.neon`) | Phase 1 |
 | A Render or Railway account connected to the GitHub repo | Phase 1 |
-| College email domain(s) for `ALLOWED_EMAIL_DOMAINS` | Phase 2 |
+| College email domain(s) for `ALLOWED_EMAIL_DOMAINS` (done: `bmu.edu.in`; the tests keep the reserved `college.example`) | Phase 2 |
 | A Resend account and API key, plus a sender address (a verified domain, or Resend's test sender for development) | Phase 2 |
 | The hostel list | Phase 2 (or added later in the admin screen) |
 | The first admin's email | Phase 2 (`create-admin`) |
